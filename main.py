@@ -9,6 +9,7 @@ from collectors.greenhouse import (
     normalize_greenhouse_job,
 )
 from collectors.lever import fetch_lever_jobs
+from collectors.ashby import fetch_ashby_jobs
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -29,6 +30,49 @@ def load_lever_boards():
         encoding="utf-8",
     ) as file:
         return json.load(file)
+
+def load_ashby_boards():
+    with open(
+        "config/ashby_boards.json",
+        "r",
+        encoding="utf-8",
+    ) as file:
+        return json.load(file)
+
+def normalize_ashby_job(raw_job, company, slug):
+    """
+    Convert an Ashby job into the common structure used by
+    our classifiers and Supabase jobs table.
+    """
+
+    location = raw_job.get("location") or ""
+
+    description = (
+        raw_job.get("descriptionPlain")
+        or raw_job.get("description")
+        or ""
+    )
+
+    job_id = raw_job.get("id")
+
+    return {
+        "title": raw_job.get("title") or "",
+        "company": company,
+        "description": description,
+        "category": None,
+        "location": location,
+        "remote": raw_job.get("isRemote", False),
+        "philippines_eligible": False,
+        "source": "ashby",
+        "source_job_id": str(job_id) if job_id else None,
+        "job_url": (
+            raw_job.get("jobUrl")
+            or raw_job.get("applyUrl")
+        ),
+        "posted_at": raw_job.get("publishedAt"),
+        "status": "active",
+        "classification_reason": None,
+    }
 
 def normalize_lever_job(raw_job, company, slug):
     """
