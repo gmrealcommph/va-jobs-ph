@@ -920,48 +920,48 @@ def main():
                     f"- {error}"
                 )
     # -------------------------
-# ASHBY
-# -------------------------
+    # ASHBY
+    # -------------------------
 
-print("\n==============================")
-print("ASHBY")
-print("==============================")
+    print("\n==============================")
+    print("ASHBY")
+    print("==============================")
 
-for board in ashby_boards:
-    slug = board["slug"]
-    company = board["name"]
+    for board in ashby_boards:
+        slug = board["slug"]
+        company = board["name"]
 
-    print(f"\nFetching Ashby jobs: {company} ({slug})")
+        print(f"\nFetching Ashby jobs: {company} ({slug})")
 
-    try:
-        raw_jobs = fetch_ashby_jobs(slug)
+        try:
+            raw_jobs = fetch_ashby_jobs(slug)
 
-        print(f"Found {len(raw_jobs)} jobs")
+            print(f"Found {len(raw_jobs)} jobs")
 
-        total_fetched += len(raw_jobs)
+            total_fetched += len(raw_jobs)
 
-        for raw_job in raw_jobs:
-            job = normalize_ashby_job(
-                raw_job,
-                company,
-                slug,
+            for raw_job in raw_jobs:
+                job = normalize_ashby_job(
+                    raw_job,
+                    company,
+                    slug,
+                )
+
+                process_job(
+                    job,
+                    raw_title=raw_job.get(
+                        "title",
+                        "Unknown",
+                    ),
+                )
+
+        except Exception as exc:
+            total_errors += 1
+
+            print(
+                f"ERROR fetching Ashby board "
+                f"{company} ({slug}): {exc}"
             )
-
-            process_job(
-                job,
-                raw_title=raw_job.get(
-                    "title",
-                    "Unknown",
-                ),
-            )
-
-    except Exception as exc:
-        total_errors += 1
-
-        print(
-            f"ERROR fetching Ashby board "
-            f"{company} ({slug}): {exc}"
-        )
     # =========================================================
     # SUMMARY
     # =========================================================
