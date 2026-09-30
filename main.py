@@ -61,7 +61,7 @@ def normalize_ashby_job(raw_job, company, slug):
         "description": description,
         "category": None,
         "location": location,
-        "remote": raw_job.get("isRemote", False),
+        "remote": raw_job.get("isRemote"),
         "philippines_eligible": False,
         "source": "ashby",
         "source_job_id": str(job_id) if job_id else None,
@@ -128,23 +128,35 @@ def check_remote_status(job):
     Determine whether a job has sufficient evidence that it is remote.
 
     Returns:
-        remote   -> confirmed remote
-        review   -> remote status is unknown
-        onsite   -> confirmed non-remote
+        remote -> confirmed remote
+        review -> remote status is unknown
+        onsite -> confirmed non-remote
     """
 
     remote = job.get("remote")
-    location = clean_text(job.get("location")).lower()
+    location = clean_text(
+        job.get("location")
+    ).lower()
 
-    # Structured remote flag from the ATS
+    description = clean_text(
+        job.get("description")
+    ).lower()
+
+    # ---------------------------------------------------------
+    # 1. STRUCTURED ATS REMOTE FLAG
+    # ---------------------------------------------------------
+
     if remote is True:
         return (
             "remote",
             "ATS explicitly marks job as remote",
         )
 
-    # Location itself explicitly says remote
-    remote_terms = [
+    # ---------------------------------------------------------
+    # 2. LOCATION EXPLICITLY INDICATES REMOTE WORK
+    # ---------------------------------------------------------
+
+    remote_location_terms = [
         "remote",
         "work from home",
         "work-from-home",
@@ -153,23 +165,69 @@ def check_remote_status(job):
         "home-based",
     ]
 
-    if any(term in location for term in remote_terms):
+    if any(
+        term in location
+        for term in remote_location_terms
+    ):
         return (
             "remote",
             "Location explicitly indicates remote work",
         )
 
-    # We don't yet have enough evidence to call it on-site.
-    # Some ATS platforms simply omit their remote flag.
-    if remote is None:
+    # ---------------------------------------------------------
+    # 3. DESCRIPTION EXPLICITLY CONFIRMS REMOTE WORK
+    # ---------------------------------------------------------
+    #
+    # Deliberately use strong phrases rather than simply
+    # searching for the word "remote". A description might say
+    # things such as "not remote" or discuss remote customers.
+
+    explicit_remote_phrases = [
+        "this is a remote position",
+        "this is a fully remote position",
+        "this is a 100% remote position",
+        "this is a remote role",
+        "this is a fully remote role",
+        "fully remote position",
+        "fully remote role",
+        "100% remote position",
+        "100% remote role",
+        "work from home position",
+        "work-from-home position",
+        "work from home role",
+        "work-from-home role",
+        "home-based position",
+        "home based position",
+        "home-based role",
+        "home based role",
+    ]
+
+    if any(
+        phrase in description
+        for phrase in explicit_remote_phrases
+    ):
         return (
-            "review",
-            "Remote status is not specified",
+            "remote",
+            "Job description explicitly confirms remote work",
         )
 
+    # ---------------------------------------------------------
+    # 4. STRUCTURED ATS FLAG EXPLICITLY SAYS NON-REMOTE
+    # ---------------------------------------------------------
+
+    if remote is False:
+        return (
+            "onsite",
+            "ATS explicitly marks job as non-remote",
+        )
+
+    # ---------------------------------------------------------
+    # 5. REMOTE STATUS UNKNOWN
+    # ---------------------------------------------------------
+
     return (
-        "onsite",
-        "ATS does not mark job as remote",
+        "review",
+        "Remote status is not specified",
     )
 
 
