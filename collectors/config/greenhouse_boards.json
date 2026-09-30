@@ -1,0 +1,22 @@
+[
+  {
+    "company": "GitLab",
+    "board": "gitlab"
+  },
+  {
+    "company": "Canonical",
+    "board": "canonical"
+  },
+  {
+    "company": "Remote",
+    "board": "remotecom"
+  },
+  {
+    "company": "Webflow",
+    "board": "webflow"
+  },
+  {
+    "company": "Deel",
+    "board": "deel"
+  }
+]
