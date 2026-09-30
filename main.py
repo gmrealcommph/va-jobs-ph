@@ -874,130 +874,154 @@ def main():
     # =========================================================
 
     def process_job(job, raw_title="Unknown"):
-        nonlocal total_published
-        nonlocal total_review
-        nonlocal total_rejected
-        nonlocal total_errors
+    nonlocal total_published
+    nonlocal total_review
+    nonlocal total_rejected
+    nonlocal total_errors
 
-        try:
-            # -------------------------------------------------
-            # 1. PHILIPPINES / GEOGRAPHY CHECK
-            # -------------------------------------------------
+    try:
+        # -------------------------------------------------
+        # 1. JOB RELEVANCE CHECK
+        # -------------------------------------------------
+        # Reject obviously irrelevant jobs before spending
+        # time deciding whether their geography is eligible.
+        #
+        # This prevents technical, senior leadership and
+        # enterprise-sales jobs with generic "Remote"
+        # locations from unnecessarily entering Review.
 
-            decision, reason = check_philippines_eligibility(job)
+        relevance, relevance_reason = check_va_relevance(job)
 
-            if decision == "publish":
-                # -------------------------------------------------
-                # 2. JOB RELEVANCE CHECK
-                # -------------------------------------------------
+        if relevance == "irrelevant":
+            save_review_job(
+                supabase,
+                job,
+                "reject",
+                relevance_reason,
+            )
 
-                relevance, relevance_reason = check_va_relevance(job)
+            total_rejected += 1
+            return
 
-                if relevance == "relevant":
-                    # -------------------------------------------------
-                    # 3. REMOTE STATUS CHECK
-                    # -------------------------------------------------
-                    # Ashby provides structured remote information.
-                    # For now, enforce this only for Ashby.
-                    # Greenhouse and Lever will be handled separately.
+        # -------------------------------------------------
+        # 2. PHILIPPINES / GEOGRAPHY CHECK
+        # -------------------------------------------------
 
-                    if job.get("source") == "ashby":
-                        remote_decision, remote_reason = (
-                            check_remote_status(job)
-                        )
+        decision, reason = check_philippines_eligibility(job)
 
-                        if remote_decision == "onsite":
-                            save_review_job(
-                                supabase,
-                                job,
-                                "reject",
-                                remote_reason,
-                            )
+        if decision == "reject":
+            save_review_job(
+                supabase,
+                job,
+                "reject",
+                reason,
+            )
 
-                            total_rejected += 1
-                            return
+            total_rejected += 1
+            return
 
-                        if remote_decision == "review":
-                            save_review_job(
-                                supabase,
-                                job,
-                                "review",
-                                remote_reason,
-                            )
+        # -------------------------------------------------
+        # 3. GENUINELY AMBIGUOUS RELEVANCE
+        # -------------------------------------------------
+        # Only keep an ambiguous role in Review if its
+        # geography is at least potentially suitable.
 
-                            total_review += 1
-                            return
+        if relevance == "review":
+            combined_reason = (
+                f"{relevance_reason}. "
+                f"Geography: {reason}"
+            )
 
-                    # -------------------------------------------------
-                    # 4. PUBLISH
-                    # -------------------------------------------------
+            save_review_job(
+                supabase,
+                job,
+                "review",
+                combined_reason,
+            )
 
-                    save_published_job(
-                        supabase,
-                        job,
-                        reason,
-                    )
+            total_review += 1
+            return
 
-                    total_published += 1
+        # -------------------------------------------------
+        # 4. AMBIGUOUS GEOGRAPHY
+        # -------------------------------------------------
+        # At this point the role itself is relevant, but we
+        # still don't have enough evidence that applicants
+        # from the Philippines are eligible.
 
-                    print(
-                        f"  PUBLISHED: {job['title']} "
-                        f"[{job['category']}] "
-                        f"- {job['location']}"
-                    )
+        if decision == "review":
+            save_review_job(
+                supabase,
+                job,
+                "review",
+                reason,
+            )
 
-                else:
-                    review_decision = (
-                        "review"
-                        if relevance == "review"
-                        else "reject"
-                    )
+            total_review += 1
+            return
 
-                    combined_reason = (
-                        f"{relevance_reason}. "
-                        f"Geography: {reason}"
-                    )
+        # -------------------------------------------------
+        # 5. REMOTE STATUS CHECK
+        # -------------------------------------------------
+        # Geography and relevance have both passed.
+        #
+        # For now this additional remote validation applies
+        # only to Ashby. Greenhouse and Lever remote-status
+        # validation will be added separately.
 
-                    save_review_job(
-                        supabase,
-                        job,
-                        review_decision,
-                        combined_reason,
-                    )
+        if job.get("source") == "ashby":
+            remote_decision, remote_reason = (
+                check_remote_status(job)
+            )
 
-                    if review_decision == "review":
-                        total_review += 1
-                    else:
-                        total_rejected += 1
-
-            elif decision == "review":
+            if remote_decision == "onsite":
                 save_review_job(
                     supabase,
                     job,
-                    decision,
-                    reason,
-                )
-
-                total_review += 1
-
-            else:
-                save_review_job(
-                    supabase,
-                    job,
-                    decision,
-                    reason,
+                    "reject",
+                    remote_reason,
                 )
 
                 total_rejected += 1
+                return
 
-        except Exception as error:
-            total_errors += 1
+            if remote_decision == "review":
+                save_review_job(
+                    supabase,
+                    job,
+                    "review",
+                    remote_reason,
+                )
 
-            print(
-                f"  JOB ERROR: "
-                f"{raw_title} "
-                f"- {error}"
-            )
+                total_review += 1
+                return
+
+        # -------------------------------------------------
+        # 6. PUBLISH
+        # -------------------------------------------------
+
+        save_published_job(
+            supabase,
+            job,
+            reason,
+        )
+
+        total_published += 1
+
+        print(
+            f"  PUBLISHED: {job['title']} "
+            f"[{job['category']}] "
+            f"- {job['location']}"
+        )
+
+    except Exception as error:
+        total_errors += 1
+
+        print(
+            f"  JOB ERROR: "
+            f"{raw_title} "
+            f"- {error}"
+        )
 
     # =========================================================
     # GREENHOUSE
