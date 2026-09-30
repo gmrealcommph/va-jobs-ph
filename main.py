@@ -112,128 +112,304 @@ def check_philippines_eligibility(job):
 
 def check_va_relevance(job):
     """
-    Determine whether a job belongs on a VA-focused
-    remote jobs platform.
+    Decide whether a geographically eligible job belongs on the
+    Philippines-focused VA / remote-work platform.
 
     Returns:
-        relevant
-        review
-        irrelevant
+        relevant   -> publish automatically
+        review     -> potentially suitable but ambiguous
+        irrelevant -> reject automatically
     """
 
     title = clean_text(job.get("title")).lower()
 
-    relevant_terms = [
-        # Assistants / administration
+    # ---------------------------------------------------------
+    # 1. HIGH-CONFIDENCE TARGET ROLES
+    # ---------------------------------------------------------
+
+    target_terms = [
+        # Virtual / executive / administrative assistance
         "virtual assistant",
         "executive assistant",
         "personal assistant",
         "administrative assistant",
         "admin assistant",
         "administrative coordinator",
+        "admin coordinator",
         "office coordinator",
+        "office assistant",
+        "remote assistant",
 
-        # Customer support
+        # Customer service / customer support
         "customer support",
         "customer service",
-        "customer success",
         "customer experience",
+        "customer care",
         "support specialist",
         "support representative",
+        "support agent",
+        "customer service representative",
 
-        # Sales / lead generation
-        "sales representative",
+        # Customer success
+        "customer success",
+
+        # Sales / business development
+        "sales development representative",
         "sales development",
+        "business development representative",
         "business development",
-        "account executive",
         "appointment setter",
         "lead generation",
         "lead generator",
-        "sdr",
-        "bdr",
+        "sales representative",
+        "inside sales",
+        "sales associate",
 
-        # Operations
+        # Operations / coordination
         "operations assistant",
         "operations coordinator",
         "operations specialist",
         "project coordinator",
+        "project assistant",
+        "business operations coordinator",
 
         # Marketing
         "marketing assistant",
+        "marketing associate",
         "marketing coordinator",
         "marketing specialist",
         "digital marketing",
         "email marketing",
         "seo specialist",
+        "seo assistant",
 
-        # Social
+        # Social media / community
         "social media",
         "community manager",
+        "community specialist",
         "content creator",
 
-        # Ecommerce
+        # E-commerce
         "ecommerce",
         "e-commerce",
         "shopify",
         "amazon specialist",
+        "amazon virtual assistant",
 
-        # Finance
+        # Bookkeeping / finance support
         "bookkeeper",
         "bookkeeping",
+        "accounting assistant",
         "accounts payable",
         "accounts receivable",
-        "accounting assistant",
+        "billing specialist",
+        "payroll specialist",
 
-        # Recruitment
+        # Recruitment / HR
         "recruiter",
         "recruitment coordinator",
         "talent acquisition coordinator",
         "hr assistant",
         "hr coordinator",
+        "hr specialist",
+        "hr generalist",
+        "human resources assistant",
 
-        # Content / creative
+        # Writing / content
         "copywriter",
         "content writer",
+        "content editor",
+        "blog writer",
+
+        # Design / creative
         "graphic designer",
         "video editor",
+        "motion designer",
 
         # Data
         "data entry",
         "data encoder",
+        "data processor",
     ]
 
-    if any(term in title for term in relevant_terms):
-        return "relevant", "Title matches VA/remote-work role"
+    # Abbreviations need word-boundary matching so we don't accidentally
+    # match things such as "address" because it contains "sdr".
+    abbreviation_patterns = [
+        r"\bsdr\b",
+        r"\bbdr\b",
+    ]
 
-    irrelevant_terms = [
-        "software engineer",
+    matches_target = (
+        any(term in title for term in target_terms)
+        or any(
+            re.search(pattern, title)
+            for pattern in abbreviation_patterns
+        )
+    )
+
+    # ---------------------------------------------------------
+    # 2. TECHNICAL / PROFESSIONAL ROLES WE DON'T WANT
+    # ---------------------------------------------------------
+
+    technical_exclusions = [
+        # Engineering / development
+        "engineer",
+        "engineering",
         "software developer",
+        "software development",
+        "web developer",
+        "frontend developer",
+        "front-end developer",
+        "backend developer",
+        "back-end developer",
+        "full stack",
+        "full-stack",
+        "golang",
+        "python developer",
+        "python engineer",
+        "rust developer",
+        "rust engineer",
+
+        # Infrastructure / cloud
         "devops",
         "site reliability",
-        "cloud engineer",
-        "field engineer",
+        "linux",
+        "kernel",
+        "cloud architect",
         "solutions architect",
         "solution architect",
+        "systems architect",
+        "openstack",
+        "kubernetes",
+        "containerization",
+        "virtualisation",
+        "virtualization",
+
+        # Security
         "security engineer",
         "security researcher",
+        "security operations",
+        "cybersecurity",
+        "threat intelligence",
+
+        # Data / AI
         "data scientist",
         "machine learning",
+        "mlops",
         "research scientist",
-        "developer advocate",
-        "kernel engineer",
-        "linux engineer",
+
+        # Legal
         "legal counsel",
+        "general counsel",
         "attorney",
         "lawyer",
+
+        # Medical / clinical
         "physician",
         "nurse",
         "clinical",
+
+        # Highly technical relations / advocacy
+        "developer relations",
+        "developer advocate",
     ]
 
-    if any(term in title for term in irrelevant_terms):
-        return "irrelevant", "Specialist role outside VA job scope"
+    if any(term in title for term in technical_exclusions):
+        return (
+            "irrelevant",
+            "Technical/professional role outside VA job scope",
+        )
 
-    return "review", "Role relevance requires review"
+    # ---------------------------------------------------------
+    # 3. SENIOR LEADERSHIP EXCLUSIONS
+    # ---------------------------------------------------------
+
+    senior_terms = [
+        "vice president",
+        "vp ",
+        "vp,",
+        "director",
+        "head of ",
+        "principal ",
+        "chief ",
+        "senior manager",
+        "team manager",
+        "engineering manager",
+    ]
+
+    # Certain target roles legitimately use "manager".
+    allowed_manager_terms = [
+        "social media manager",
+        "community manager",
+        "account manager",
+        "customer success manager",
+        "marketing manager",
+        "ecommerce manager",
+        "e-commerce manager",
+    ]
+
+    is_allowed_manager = any(
+        term in title
+        for term in allowed_manager_terms
+    )
+
+    if (
+        any(term in title for term in senior_terms)
+        and not is_allowed_manager
+    ):
+        return (
+            "irrelevant",
+            "Senior leadership role outside target job scope",
+        )
+
+    # ---------------------------------------------------------
+    # 4. CLEAR TARGET ROLE
+    # ---------------------------------------------------------
+
+    if matches_target:
+        return (
+            "relevant",
+            "Title matches target VA/remote-work role",
+        )
+
+    # ---------------------------------------------------------
+    # 5. BORDERLINE ROLES WORTH REVIEWING
+    # ---------------------------------------------------------
+
+    review_terms = [
+        "project manager",
+        "account executive",
+        "sales executive",
+        "sales manager",
+        "sales specialist",
+        "account specialist",
+        "account coordinator",
+        "account manager",
+        "marketing manager",
+        "operations manager",
+        "business services",
+        "mobility specialist",
+        "technical author",
+        "content specialist",
+        "communications",
+        "human resources",
+        "talent acquisition",
+    ]
+
+    if any(term in title for term in review_terms):
+        return (
+            "review",
+            "Potential remote-work role requires review",
+        )
+
+    # ---------------------------------------------------------
+    # 6. EVERYTHING ELSE
+    # ---------------------------------------------------------
+
+    return (
+        "irrelevant",
+        "Role does not match target VA/remote-work categories",
+    )
 
 def classify_job(job):
     """
