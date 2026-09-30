@@ -8,7 +8,7 @@ from collectors.greenhouse import (
     fetch_greenhouse_jobs,
     normalize_greenhouse_job,
 )
-
+from collectors.lever import fetch_lever_jobs
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -21,6 +21,52 @@ def load_greenhouse_boards():
         encoding="utf-8",
     ) as file:
         return json.load(file)
+
+def load_lever_boards():
+    with open(
+        "config/lever_boards.json",
+        "r",
+        encoding="utf-8",
+    ) as file:
+        return json.load(file)
+
+def normalize_lever_job(raw_job, company, slug):
+    """
+    Convert a Lever job into the same structure used by our
+    Greenhouse jobs and Supabase jobs table.
+    """
+
+    categories = raw_job.get("categories") or {}
+
+    location = categories.get("location") or ""
+
+    description_parts = [
+        raw_job.get("descriptionPlain") or "",
+        raw_job.get("additionalPlain") or "",
+    ]
+
+    description = "\n\n".join(
+        part for part in description_parts if part
+    )
+
+    job_id = raw_job.get("id")
+
+    return {
+        "title": raw_job.get("text") or "",
+        "company": company,
+        "description": description,
+        "category": None,
+        "location": location,
+        "remote": "remote" in location.lower(),
+        "philippines_eligible": False,
+        "source": "lever",
+        "source_job_id": str(job_id) if job_id else None,
+        "job_url": raw_job.get("hostedUrl")
+        or raw_job.get("applyUrl"),
+        "posted_at": None,
+        "status": "active",
+        "classification_reason": None,
+    }
 
 
 def clean_text(value):
