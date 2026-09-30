@@ -665,7 +665,8 @@ def main():
         SUPABASE_KEY,
     )
 
-    boards = load_greenhouse_boards()
+    greenhouse_boards = load_greenhouse_boards()
+    lever_boards = load_lever_boards()
 
     total_fetched = 0
     total_published = 0
@@ -673,7 +674,99 @@ def main():
     total_rejected = 0
     total_errors = 0
 
-    for board_config in boards:
+    # =========================================================
+    # Shared job processor
+    # =========================================================
+
+    def process_job(job, raw_title="Unknown"):
+        nonlocal total_published
+        nonlocal total_review
+        nonlocal total_rejected
+        nonlocal total_errors
+
+        try:
+            decision, reason = check_philippines_eligibility(job)
+
+            if decision == "publish":
+                relevance, relevance_reason = check_va_relevance(job)
+
+                if relevance == "relevant":
+                    save_published_job(
+                        supabase,
+                        job,
+                        reason,
+                    )
+
+                    total_published += 1
+
+                    print(
+                        f"  PUBLISHED: {job['title']} "
+                        f"[{job['category']}] "
+                        f"- {job['location']}"
+                    )
+
+                else:
+                    review_decision = (
+                        "review"
+                        if relevance == "review"
+                        else "reject"
+                    )
+
+                    combined_reason = (
+                        f"{relevance_reason}. "
+                        f"Geography: {reason}"
+                    )
+
+                    save_review_job(
+                        supabase,
+                        job,
+                        review_decision,
+                        combined_reason,
+                    )
+
+                    if review_decision == "review":
+                        total_review += 1
+                    else:
+                        total_rejected += 1
+
+            elif decision == "review":
+                save_review_job(
+                    supabase,
+                    job,
+                    decision,
+                    reason,
+                )
+
+                total_review += 1
+
+            else:
+                save_review_job(
+                    supabase,
+                    job,
+                    decision,
+                    reason,
+                )
+
+                total_rejected += 1
+
+        except Exception as error:
+            total_errors += 1
+
+            print(
+                f"  JOB ERROR: "
+                f"{raw_title} "
+                f"- {error}"
+            )
+
+    # =========================================================
+    # GREENHOUSE
+    # =========================================================
+
+    print("\n================================")
+    print("GREENHOUSE")
+    print("================================")
+
+    for board_config in greenhouse_boards:
         company = board_config["company"]
         board = board_config["board"]
 
@@ -699,69 +792,10 @@ def main():
                     board=board,
                 )
 
-                decision, reason = check_philippines_eligibility(job)
-
-                if decision == "publish":
-                    relevance, relevance_reason = check_va_relevance(job)
-
-                    if relevance == "relevant":
-                        save_published_job(
-                            supabase,
-                            job,
-                            reason,
-                        )
-
-                        total_published += 1
-
-                        print(
-                            f"  PUBLISHED: {job['title']} "
-                            f"[{job['category']}] "
-                            f"- {job['location']}"
-                        )
-
-                    else:
-                        review_decision = (
-                            "review"
-                            if relevance == "review"
-                            else "reject"
-                        )
-
-                        combined_reason = (
-                            f"{relevance_reason}. "
-                            f"Geography: {reason}"
-                        )
-
-                        save_review_job(
-                            supabase,
-                            job,
-                            review_decision,
-                            combined_reason,
-                        )
-
-                        if review_decision == "review":
-                            total_review += 1
-                        else:
-                            total_rejected += 1
-
-                elif decision == "review":
-                    save_review_job(
-                        supabase,
-                        job,
-                        decision,
-                        reason,
-                    )
-
-                    total_review += 1
-
-                else:
-                    save_review_job(
-                        supabase,
-                        job,
-                        decision,
-                        reason,
-                    )
-
-                    total_rejected += 1
+                process_job(
+                    job,
+                    raw_job.get("title", "Unknown"),
+                )
 
             except Exception as error:
                 total_errors += 1
@@ -771,6 +805,58 @@ def main():
                     f"{raw_job.get('title', 'Unknown')} "
                     f"- {error}"
                 )
+
+    # =========================================================
+    # LEVER
+    # =========================================================
+
+    print("\n================================")
+    print("LEVER")
+    print("================================")
+
+    for board_config in lever_boards:
+        company = board_config["name"]
+        slug = board_config["slug"]
+
+        print(f"\nChecking {company} ({slug})...")
+
+        try:
+            raw_jobs = fetch_lever_jobs(slug)
+
+        except Exception as error:
+            print(f"  SOURCE FAILED: {error}")
+            total_errors += 1
+            continue
+
+        print(f"  Found {len(raw_jobs)} jobs.")
+
+        total_fetched += len(raw_jobs)
+
+        for raw_job in raw_jobs:
+            try:
+                job = normalize_lever_job(
+                    raw_job,
+                    company=company,
+                    slug=slug,
+                )
+
+                process_job(
+                    job,
+                    raw_job.get("text", "Unknown"),
+                )
+
+            except Exception as error:
+                total_errors += 1
+
+                print(
+                    f"  JOB ERROR: "
+                    f"{raw_job.get('text', 'Unknown')} "
+                    f"- {error}"
+                )
+
+    # =========================================================
+    # SUMMARY
+    # =========================================================
 
     print("\n================================")
     print("COLLECTION COMPLETE")
