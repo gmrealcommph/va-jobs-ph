@@ -1,6 +1,42 @@
 [
   {
-    "slug": "deel",
-    "name": "Deel"
+    "slug": "instructure",
+    "name": "Instructure"
+  },
+  {
+    "slug": "Playbook",
+    "name": "Playbook"
+  },
+  {
+    "slug": "Agent",
+    "name": "Agent"
+  },
+  {
+    "slug": "junction",
+    "name": "Junction"
+  },
+  {
+    "slug": "cas",
+    "name": "Cloud Accountant Staffing"
+  },
+  {
+    "slug": "foundry-for-good",
+    "name": "Foundry for Good"
+  },
+  {
+    "slug": "ShortStory",
+    "name": "Short Story"
+  },
+  {
+    "slug": "EYT",
+    "name": "Extend Your Team"
+  },
+  {
+    "slug": "Ashby",
+    "name": "Ashby"
+  },
+  {
+    "slug": "lightsource",
+    "name": "LightSource"
   }
 ]
