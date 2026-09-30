@@ -117,14 +117,147 @@ def check_va_relevance(job):
 
     Returns:
         relevant   -> publish automatically
-        review     -> potentially suitable but ambiguous
+        review     -> potentially suitable but genuinely ambiguous
         irrelevant -> reject automatically
     """
 
     title = clean_text(job.get("title")).lower()
 
     # ---------------------------------------------------------
-    # 1. HIGH-CONFIDENCE TARGET ROLES
+    # 1. TECHNICAL / SPECIALIST ROLES WE DON'T WANT
+    # ---------------------------------------------------------
+    # Check these BEFORE positive matches. This prevents titles such as
+    # "Project Manager - Ubuntu Embedded Systems" from slipping through.
+
+    technical_exclusions = [
+        # Engineering / development
+        "engineer",
+        "engineering",
+        "software developer",
+        "software development",
+        "web developer",
+        "frontend developer",
+        "front-end developer",
+        "backend developer",
+        "back-end developer",
+        "full stack",
+        "full-stack",
+        "golang",
+        "python developer",
+        "python engineer",
+        "rust developer",
+        "rust engineer",
+
+        # Infrastructure / cloud / embedded
+        "devops",
+        "site reliability",
+        "linux",
+        "kernel",
+        "cloud architect",
+        "solutions architect",
+        "solution architect",
+        "systems architect",
+        "openstack",
+        "kubernetes",
+        "containerization",
+        "virtualisation",
+        "virtualization",
+        "embedded systems",
+        "embedded devices",
+        "embedded software",
+        "ubuntu",
+
+        # Security
+        "security engineer",
+        "security researcher",
+        "security operations",
+        "cybersecurity",
+        "threat intelligence",
+
+        # Data / AI
+        "data scientist",
+        "machine learning",
+        "mlops",
+        "research scientist",
+
+        # Legal
+        "legal counsel",
+        "general counsel",
+        "attorney",
+        "lawyer",
+
+        # Medical / clinical
+        "physician",
+        "nurse",
+        "clinical",
+
+        # Highly technical relations
+        "developer relations",
+        "developer advocate",
+
+        # Architecture
+        "solutions architect",
+        "solution architect",
+    ]
+
+    if any(term in title for term in technical_exclusions):
+        return (
+            "irrelevant",
+            "Technical/professional role outside VA job scope",
+        )
+
+    # ---------------------------------------------------------
+    # 2. SENIOR LEADERSHIP
+    # ---------------------------------------------------------
+
+    senior_terms = [
+        "vice president",
+        "vp ",
+        "vp,",
+        "director",
+        "head of ",
+        "principal ",
+        "chief ",
+        "senior manager",
+        "general manager",
+        "team manager",
+    ]
+
+    if any(term in title for term in senior_terms):
+        return (
+            "irrelevant",
+            "Senior leadership role outside target job scope",
+        )
+
+    # ---------------------------------------------------------
+    # 3. SPECIALIZED ENTERPRISE / PARTNER SALES
+    # ---------------------------------------------------------
+    # These are remote jobs, but they're not really the type of
+    # Philippines-focused VA / remote jobs we're building around.
+
+    enterprise_sales_exclusions = [
+        "enterprise account executive",
+        "strategic account executive",
+        "commercial account executive",
+        "channel partner",
+        "channel sales",
+        "partner sales",
+        "alliance sales",
+        "alliances sales",
+        "global account executive",
+        "enterprise sales",
+        "solution sales",
+        "solutions sales",
+    ]
+
+    if any(term in title for term in enterprise_sales_exclusions):
+        return (
+            "irrelevant",
+            "Specialized enterprise/partner sales role outside target scope",
+        )
+
+    # ---------------------------------------------------------
+    # 4. HIGH-CONFIDENCE TARGET ROLES
     # ---------------------------------------------------------
 
     target_terms = [
@@ -140,7 +273,7 @@ def check_va_relevance(job):
         "office assistant",
         "remote assistant",
 
-        # Customer service / customer support
+        # Customer service / support
         "customer support",
         "customer service",
         "customer experience",
@@ -153,7 +286,7 @@ def check_va_relevance(job):
         # Customer success
         "customer success",
 
-        # Sales / business development
+        # Entry/mid-level sales & lead generation
         "sales development representative",
         "sales development",
         "business development representative",
@@ -169,21 +302,27 @@ def check_va_relevance(job):
         "operations assistant",
         "operations coordinator",
         "operations specialist",
+        "operations manager",
         "project coordinator",
         "project assistant",
         "business operations coordinator",
+
+        # Project management
+        "junior project manager",
+        "project manager",
 
         # Marketing
         "marketing assistant",
         "marketing associate",
         "marketing coordinator",
         "marketing specialist",
+        "marketing manager",
         "digital marketing",
         "email marketing",
         "seo specialist",
         "seo assistant",
 
-        # Social media / community
+        # Social / community
         "social media",
         "community manager",
         "community specialist",
@@ -226,14 +365,15 @@ def check_va_relevance(job):
         "video editor",
         "motion designer",
 
-        # Data
+        # Data/admin
         "data entry",
         "data encoder",
         "data processor",
+
+        # Account/client management
+        "account manager",
     ]
 
-    # Abbreviations need word-boundary matching so we don't accidentally
-    # match things such as "address" because it contains "sdr".
     abbreviation_patterns = [
         r"\bsdr\b",
         r"\bbdr\b",
@@ -247,125 +387,6 @@ def check_va_relevance(job):
         )
     )
 
-    # ---------------------------------------------------------
-    # 2. TECHNICAL / PROFESSIONAL ROLES WE DON'T WANT
-    # ---------------------------------------------------------
-
-    technical_exclusions = [
-        # Engineering / development
-        "engineer",
-        "engineering",
-        "software developer",
-        "software development",
-        "web developer",
-        "frontend developer",
-        "front-end developer",
-        "backend developer",
-        "back-end developer",
-        "full stack",
-        "full-stack",
-        "golang",
-        "python developer",
-        "python engineer",
-        "rust developer",
-        "rust engineer",
-
-        # Infrastructure / cloud
-        "devops",
-        "site reliability",
-        "linux",
-        "kernel",
-        "cloud architect",
-        "solutions architect",
-        "solution architect",
-        "systems architect",
-        "openstack",
-        "kubernetes",
-        "containerization",
-        "virtualisation",
-        "virtualization",
-
-        # Security
-        "security engineer",
-        "security researcher",
-        "security operations",
-        "cybersecurity",
-        "threat intelligence",
-
-        # Data / AI
-        "data scientist",
-        "machine learning",
-        "mlops",
-        "research scientist",
-
-        # Legal
-        "legal counsel",
-        "general counsel",
-        "attorney",
-        "lawyer",
-
-        # Medical / clinical
-        "physician",
-        "nurse",
-        "clinical",
-
-        # Highly technical relations / advocacy
-        "developer relations",
-        "developer advocate",
-    ]
-
-    if any(term in title for term in technical_exclusions):
-        return (
-            "irrelevant",
-            "Technical/professional role outside VA job scope",
-        )
-
-    # ---------------------------------------------------------
-    # 3. SENIOR LEADERSHIP EXCLUSIONS
-    # ---------------------------------------------------------
-
-    senior_terms = [
-        "vice president",
-        "vp ",
-        "vp,",
-        "director",
-        "head of ",
-        "principal ",
-        "chief ",
-        "senior manager",
-        "team manager",
-        "engineering manager",
-    ]
-
-    # Certain target roles legitimately use "manager".
-    allowed_manager_terms = [
-        "social media manager",
-        "community manager",
-        "account manager",
-        "customer success manager",
-        "marketing manager",
-        "ecommerce manager",
-        "e-commerce manager",
-    ]
-
-    is_allowed_manager = any(
-        term in title
-        for term in allowed_manager_terms
-    )
-
-    if (
-        any(term in title for term in senior_terms)
-        and not is_allowed_manager
-    ):
-        return (
-            "irrelevant",
-            "Senior leadership role outside target job scope",
-        )
-
-    # ---------------------------------------------------------
-    # 4. CLEAR TARGET ROLE
-    # ---------------------------------------------------------
-
     if matches_target:
         return (
             "relevant",
@@ -373,27 +394,22 @@ def check_va_relevance(job):
         )
 
     # ---------------------------------------------------------
-    # 5. BORDERLINE ROLES WORTH REVIEWING
+    # 5. GENUINELY AMBIGUOUS ROLES
     # ---------------------------------------------------------
+    # Keep this deliberately small. Review should be an exception,
+    # not a dumping ground for every unknown remote job.
 
     review_terms = [
-        "project manager",
-        "account executive",
-        "sales executive",
-        "sales manager",
-        "sales specialist",
-        "account specialist",
-        "account coordinator",
-        "account manager",
-        "marketing manager",
-        "operations manager",
-        "business services",
-        "mobility specialist",
         "technical author",
+        "mobility specialist",
         "content specialist",
-        "communications",
+        "communications specialist",
+        "communications coordinator",
         "human resources",
         "talent acquisition",
+        "business services",
+        "account coordinator",
+        "account specialist",
     ]
 
     if any(term in title for term in review_terms):
