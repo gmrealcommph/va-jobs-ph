@@ -1,5 +1,25 @@
 [
   {
+    "slug": "getwingapp",
+    "name": "Wing Assistant"
+  },
+  {
+    "slug": "assist-world",
+    "name": "Assist World"
+  },
+  {
+    "slug": "airalo",
+    "name": "Airalo"
+  },
+  {
+    "slug": "Flex",
+    "name": "Flex"
+  },
+  {
+    "slug": "lingarogroup",
+    "name": "Lingaro"
+  },
+  {
     "slug": "gohighlevel",
     "name": "HighLevel"
   }
