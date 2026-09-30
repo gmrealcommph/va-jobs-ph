@@ -110,6 +110,130 @@ def check_philippines_eligibility(job):
         f"No explicit Philippines eligibility: {job.get('location')}",
     )
 
+def check_va_relevance(job):
+    """
+    Determine whether a job belongs on a VA-focused
+    remote jobs platform.
+
+    Returns:
+        relevant
+        review
+        irrelevant
+    """
+
+    title = clean_text(job.get("title")).lower()
+
+    relevant_terms = [
+        # Assistants / administration
+        "virtual assistant",
+        "executive assistant",
+        "personal assistant",
+        "administrative assistant",
+        "admin assistant",
+        "administrative coordinator",
+        "office coordinator",
+
+        # Customer support
+        "customer support",
+        "customer service",
+        "customer success",
+        "customer experience",
+        "support specialist",
+        "support representative",
+
+        # Sales / lead generation
+        "sales representative",
+        "sales development",
+        "business development",
+        "account executive",
+        "appointment setter",
+        "lead generation",
+        "lead generator",
+        "sdr",
+        "bdr",
+
+        # Operations
+        "operations assistant",
+        "operations coordinator",
+        "operations specialist",
+        "project coordinator",
+
+        # Marketing
+        "marketing assistant",
+        "marketing coordinator",
+        "marketing specialist",
+        "digital marketing",
+        "email marketing",
+        "seo specialist",
+
+        # Social
+        "social media",
+        "community manager",
+        "content creator",
+
+        # Ecommerce
+        "ecommerce",
+        "e-commerce",
+        "shopify",
+        "amazon specialist",
+
+        # Finance
+        "bookkeeper",
+        "bookkeeping",
+        "accounts payable",
+        "accounts receivable",
+        "accounting assistant",
+
+        # Recruitment
+        "recruiter",
+        "recruitment coordinator",
+        "talent acquisition coordinator",
+        "hr assistant",
+        "hr coordinator",
+
+        # Content / creative
+        "copywriter",
+        "content writer",
+        "graphic designer",
+        "video editor",
+
+        # Data
+        "data entry",
+        "data encoder",
+    ]
+
+    if any(term in title for term in relevant_terms):
+        return "relevant", "Title matches VA/remote-work role"
+
+    irrelevant_terms = [
+        "software engineer",
+        "software developer",
+        "devops",
+        "site reliability",
+        "cloud engineer",
+        "field engineer",
+        "solutions architect",
+        "solution architect",
+        "security engineer",
+        "security researcher",
+        "data scientist",
+        "machine learning",
+        "research scientist",
+        "developer advocate",
+        "kernel engineer",
+        "linux engineer",
+        "legal counsel",
+        "attorney",
+        "lawyer",
+        "physician",
+        "nurse",
+        "clinical",
+    ]
+
+    if any(term in title for term in irrelevant_terms):
+        return "irrelevant", "Specialist role outside VA job scope"
+
+    return "review", "Role relevance requires review"
 
 def classify_job(job):
     """
