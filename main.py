@@ -793,23 +793,65 @@ def main():
     # Shared job processor
     # =========================================================
 
-    def process_job(job, raw_title="Unknown"):
+        def process_job(job, raw_title="Unknown"):
         nonlocal total_published
         nonlocal total_review
         nonlocal total_rejected
         nonlocal total_errors
 
         try:
-
-           
-
+            # -------------------------------------------------
+            # 1. PHILIPPINES / GEOGRAPHY CHECK
+            # -------------------------------------------------
 
             decision, reason = check_philippines_eligibility(job)
 
             if decision == "publish":
+                # -------------------------------------------------
+                # 2. JOB RELEVANCE CHECK
+                # -------------------------------------------------
+
                 relevance, relevance_reason = check_va_relevance(job)
 
                 if relevance == "relevant":
+                    # -------------------------------------------------
+                    # 3. REMOTE STATUS CHECK
+                    # -------------------------------------------------
+                    # Ashby provides structured remote information.
+                    # For now, enforce this only for Ashby.
+                    # Greenhouse and Lever will be handled separately.
+
+                    if job.get("source") == "ashby":
+                        remote_decision, remote_reason = (
+                            check_remote_status(job)
+                        )
+
+                        if remote_decision == "onsite":
+                            save_review_job(
+                                supabase,
+                                job,
+                                "reject",
+                                remote_reason,
+                            )
+
+                            total_rejected += 1
+                            return
+
+                        if remote_decision == "review":
+                            save_review_job(
+                                supabase,
+                                job,
+                                "review",
+                                remote_reason,
+                            )
+
+                            total_review += 1
+                            return
+
+                    # -------------------------------------------------
+                    # 4. PUBLISH
+                    # -------------------------------------------------
+
                     save_published_job(
                         supabase,
                         job,
