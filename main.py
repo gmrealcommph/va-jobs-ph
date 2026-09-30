@@ -465,47 +465,47 @@ def main():
                     check_philippines_eligibility(job)
                 )
 
-              if decision == "publish":
-    relevance, relevance_reason = check_va_relevance(job)
+                                              if decision == "publish":
+                    relevance, relevance_reason = check_va_relevance(job)
 
-    if relevance == "relevant":
-        save_published_job(
-            supabase,
-            job,
-            reason,
-        )
+                    if relevance == "relevant":
+                        save_published_job(
+                            supabase,
+                            job,
+                            reason,
+                        )
 
-        total_published += 1
+                        total_published += 1
 
-        print(
-            f"  PUBLISHED: {job['title']} "
-            f"[{job['category']}] "
-            f"- {job['location']}"
-        )
+                        print(
+                            f"  PUBLISHED: {job['title']} "
+                            f"[{job['category']}] "
+                            f"- {job['location']}"
+                        )
 
-    else:
-        review_decision = (
-            "review"
-            if relevance == "review"
-            else "reject"
-        )
+                    else:
+                        review_decision = (
+                            "review"
+                            if relevance == "review"
+                            else "reject"
+                        )
 
-        combined_reason = (
-            f"{relevance_reason}. "
-            f"Geography: {reason}"
-        )
+                        combined_reason = (
+                            f"{relevance_reason}. "
+                            f"Geography: {reason}"
+                        )
 
-        save_review_job(
-            supabase,
-            job,
-            review_decision,
-            combined_reason,
-        )
+                        save_review_job(
+                            supabase,
+                            job,
+                            review_decision,
+                            combined_reason,
+                        )
 
-        if review_decision == "review":
-            total_review += 1
-        else:
-            total_rejected += 1
+                        if review_decision == "review":
+                            total_review += 1
+                        else:
+                            total_rejected += 1
 
                 elif decision == "review":
                     save_review_job(
