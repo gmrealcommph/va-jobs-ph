@@ -801,37 +801,7 @@ def main():
 
         try:
 
-            # -------------------------------------------------
-            # REMOTE STATUS CHECK
-            # -------------------------------------------------
-            # Ashby provides structured remote information.
-            # For now, enforce remote status only for Ashby.
-            # Greenhouse and Lever will be handled separately.
-
-            if job.get("source") == "ashby":
-                remote_decision, remote_reason = check_remote_status(job)
-
-                if remote_decision == "onsite":
-                    save_review_job(
-                        supabase,
-                        job,
-                        "reject",
-                        remote_reason,
-                    )
-
-                    total_rejected += 1
-                    return
-
-                if remote_decision == "review":
-                    save_review_job(
-                        supabase,
-                        job,
-                        "review",
-                        remote_reason,
-                    )
-
-                    total_review += 1
-                    return
+           
 
 
             decision, reason = check_philippines_eligibility(job)
