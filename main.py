@@ -794,12 +794,23 @@ def save_published_job(supabase, job, reason):
     job["classification_reason"] = reason
     job["category"] = classify_job(job)
 
+    # Publish/update the job.
     (
         supabase.table("jobs")
         .upsert(
             job,
             on_conflict="source,source_job_id",
         )
+        .execute()
+    )
+
+    # If this job was previously waiting in Review/Rejected,
+    # remove that stale classification.
+    (
+        supabase.table("job_reviews")
+        .delete()
+        .eq("source", job.get("source"))
+        .eq("source_job_id", job.get("source_job_id"))
         .execute()
     )
 
@@ -816,12 +827,23 @@ def save_review_job(supabase, job, decision, reason):
         "reason": reason,
     }
 
+    # Store/update the latest review or rejection decision.
     (
         supabase.table("job_reviews")
         .upsert(
             record,
             on_conflict="source,source_job_id",
         )
+        .execute()
+    )
+
+    # If this job was previously published, remove the stale
+    # published copy so it cannot remain visible on the site.
+    (
+        supabase.table("jobs")
+        .delete()
+        .eq("source", job.get("source"))
+        .eq("source_job_id", job.get("source_job_id"))
         .execute()
     )
 
