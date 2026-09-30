@@ -37,18 +37,13 @@ def clean_text(value):
 
 def check_philippines_eligibility(job):
     """
-    Determine whether there is reasonable evidence that someone
-    living in the Philippines can apply.
-
-    Explicit geographic restrictions take priority over generic
-    remote/global wording in the description.
+    Only accept jobs with positive geographic evidence
+    that Philippines-based applicants are eligible.
     """
 
-    location = clean_text(job.get("location")).lower()
-    description = clean_text(job.get("description")).lower()
-    title = clean_text(job.get("title")).lower()
+    location = clean_text(job.get("location")).lower().strip()
 
-    # Strongest positive signal: Philippines is explicitly named.
+    # Explicit Philippines locations
     philippines_terms = [
         "philippines",
         "philippine",
@@ -65,231 +60,156 @@ def check_philippines_eligibility(job):
     if any(term in location for term in philippines_terms):
         return True, "Location explicitly allows Philippines"
 
-    # Explicit locations/regions that normally exclude PH applicants.
-    restricted_location_terms = [
-        "united states",
-        "usa",
-        "u.s.",
-        "u.s. only",
-        "us only",
-        "canada",
-        "united kingdom",
-        "uk only",
-        "france",
-        "germany",
-        "romania",
-        "hungary",
-        "bulgaria",
-        "netherlands",
-        "iberia",
-        "poland",
-        "australia",
-        "new zealand",
-        "malaysia",
-        "singapore",
-        "india",
-        "south america",
-        "latin america",
-        "latam",
-        "emea",
-        "dach",
-        "amer",
-        "americas",
-        "europe",
-        "western europe",
-    ]
-
-    if any(term in location for term in restricted_location_terms):
-        return False, f"Location appears geographically restricted: {job.get('location')}"
-
-    # APAC can include the Philippines, provided there is no
-    # contradictory country restriction.
+    # Regional locations that include the Philippines
     apac_terms = [
         "apac",
         "asia pacific",
         "asia-pacific",
-        "asia pacific region",
+        "southeast asia",
+        "south east asia",
     ]
 
     if any(term in location for term in apac_terms):
-        return True, "Remote role open to APAC applicants"
+        return True, "Location explicitly allows APAC/Asia applicants"
 
-    # Explicit worldwide/anywhere locations.
-    worldwide_location_terms = [
+    # Explicit worldwide locations
+    worldwide_locations = [
         "worldwide",
         "anywhere",
         "global",
         "remote - global",
         "remote-global",
+        "remote worldwide",
+        "remote - worldwide",
     ]
 
-    if any(term in location for term in worldwide_location_terms):
-        return True, "Location explicitly indicates worldwide/global remote"
+    if any(term in location for term in worldwide_locations):
+        return True, "Location explicitly allows worldwide applicants"
 
-    # If the description explicitly says Philippines, that's useful
-    # provided the location itself did not already exclude PH.
-    if any(term in description for term in philippines_terms):
-        return True, "Job description explicitly references Philippines"
-
-    # Strong worldwide wording in the description.
-    worldwide_description_terms = [
-        "work from anywhere",
-        "work anywhere",
-        "remote anywhere",
-        "anywhere in the world",
-        "anywhere worldwide",
-        "globally distributed",
-        "open worldwide",
-        "worldwide applicants",
+    # Generic remote locations are too ambiguous to publish automatically.
+    generic_remote_locations = [
+        "remote",
+        "remote - remote",
+        "fully remote",
     ]
 
-    if job.get("remote") and any(
-        term in description
-        for term in worldwide_description_terms
-    ):
-        return True, "Description explicitly indicates worldwide remote eligibility"
+    if location in generic_remote_locations:
+        return False, "Remote location is ambiguous"
 
-    return False, "No reliable evidence that Philippines-based applicants are eligible"
+    # Everything else requires explicit PH/APAC/worldwide evidence.
+    return False, f"No explicit Philippines eligibility: {job.get('location')}"
 
 
 def classify_job(job):
     """
-    Assign a practical category for the job board.
+    Categorize primarily from the job title to avoid
+    unrelated words in long descriptions causing false matches.
     """
 
     title = clean_text(job.get("title")).lower()
-    description = clean_text(job.get("description")).lower()
-
-    text = f"{title} {description}"
 
     categories = [
-        (
-            "Virtual Assistant",
-            [
-                "virtual assistant",
-                "virtual executive assistant",
-                "remote assistant",
-            ],
-        ),
-        (
-            "Executive Assistant",
-            [
-                "executive assistant",
-                "personal assistant",
-                "administrative assistant",
-            ],
-        ),
-        (
-            "Customer Support",
-            [
-                "customer support",
-                "customer service",
-                "customer success",
-                "support specialist",
-                "support representative",
-            ],
-        ),
-        (
-            "Sales",
-            [
-                "sales development",
-                "sales representative",
-                "business development",
-                "appointment setter",
-                "lead generation",
-                "sales associate",
-                "account executive",
-            ],
-        ),
-        (
-            "Marketing",
-            [
-                "marketing",
-                "growth specialist",
-                "growth manager",
-                "seo",
-                "email marketing",
-            ],
-        ),
-        (
-            "Social Media",
-            [
-                "social media",
-                "community manager",
-                "content creator",
-            ],
-        ),
-        (
-            "E-commerce",
-            [
-                "ecommerce",
-                "e-commerce",
-                "shopify",
-                "amazon specialist",
-            ],
-        ),
-        (
-            "Bookkeeping & Finance",
-            [
-                "bookkeeper",
-                "bookkeeping",
-                "accounts payable",
-                "accounts receivable",
-                "accounting assistant",
-                "finance assistant",
-            ],
-        ),
-        (
-            "Recruitment & HR",
-            [
-                "recruiter",
-                "recruitment",
-                "talent acquisition",
-                "hr assistant",
-                "human resources",
-            ],
-        ),
-        (
-            "Design",
-            [
-                "graphic designer",
-                "web designer",
-                "ui designer",
-                "ux designer",
-                "video editor",
-            ],
-        ),
-        (
-            "Writing & Content",
-            [
-                "copywriter",
-                "content writer",
-                "writer",
-                "editor",
-                "content specialist",
-            ],
-        ),
-        (
-            "Data Entry",
-            [
-                "data entry",
-                "data encoder",
-            ],
-        ),
-        (
-            "Operations & Admin",
-            [
-                "operations",
-                "coordinator",
-                "administrator",
-                "administrative",
-                "project coordinator",
-            ],
-        ),
+        ("Virtual Assistant", [
+            "virtual assistant",
+            "remote assistant",
+        ]),
+
+        ("Executive Assistant", [
+            "executive assistant",
+            "personal assistant",
+            "administrative assistant",
+            "admin assistant",
+        ]),
+
+        ("Customer Support", [
+            "customer support",
+            "customer service",
+            "support specialist",
+            "support representative",
+            "customer success",
+            "customer experience",
+        ]),
+
+        ("Sales", [
+            "sales",
+            "business development",
+            "appointment setter",
+            "lead generation",
+            "account executive",
+            "sdr",
+            "bdr",
+        ]),
+
+        ("Marketing", [
+            "marketing",
+            "growth marketing",
+            "seo",
+            "email marketer",
+        ]),
+
+        ("Social Media", [
+            "social media",
+            "community manager",
+            "content creator",
+        ]),
+
+        ("E-commerce", [
+            "ecommerce",
+            "e-commerce",
+            "shopify",
+            "amazon specialist",
+        ]),
+
+        ("Bookkeeping & Finance", [
+            "bookkeeper",
+            "bookkeeping",
+            "accounting",
+            "accounts payable",
+            "accounts receivable",
+            "finance",
+            "payroll",
+        ]),
+
+        ("Recruitment & HR", [
+            "recruiter",
+            "recruitment",
+            "talent acquisition",
+            "human resources",
+            "hr specialist",
+            "hr coordinator",
+            "people operations",
+        ]),
+
+        ("Design & Creative", [
+            "graphic designer",
+            "designer",
+            "video editor",
+            "motion designer",
+        ]),
+
+        ("Writing & Content", [
+            "copywriter",
+            "content writer",
+            "writer",
+            "editor",
+        ]),
+
+        ("Data Entry", [
+            "data entry",
+            "data encoder",
+        ]),
+
+        ("Operations & Admin", [
+            "operations",
+            "operations specialist",
+            "operations coordinator",
+            "project coordinator",
+            "administrative",
+        ]),
     ]
 
     for category, keywords in categories:
-        if any(keyword in text for keyword in keywords):
+        if any(keyword in title for keyword in keywords):
             return category
 
     return "Other Remote"
