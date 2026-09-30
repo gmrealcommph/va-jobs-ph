@@ -461,11 +461,9 @@ def main():
                     board=board,
                 )
 
-                decision, reason = (
-                    check_philippines_eligibility(job)
-                )
+                decision, reason = check_philippines_eligibility(job)
 
-                                              if decision == "publish":
+                if decision == "publish":
                     relevance, relevance_reason = check_va_relevance(job)
 
                     if relevance == "relevant":
