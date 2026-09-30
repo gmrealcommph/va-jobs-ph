@@ -37,13 +37,14 @@ def clean_text(value):
 
 def check_philippines_eligibility(job):
     """
-    Only accept jobs with positive geographic evidence
-    that Philippines-based applicants are eligible.
+    Return one of:
+    publish - clear evidence PH applicants are eligible
+    review  - potentially eligible, but geography is ambiguous
+    reject  - location clearly doesn't establish PH eligibility
     """
 
     location = clean_text(job.get("location")).lower().strip()
 
-    # Explicit Philippines locations
     philippines_terms = [
         "philippines",
         "philippine",
@@ -58,9 +59,8 @@ def check_philippines_eligibility(job):
     ]
 
     if any(term in location for term in philippines_terms):
-        return True, "Location explicitly allows Philippines"
+        return "publish", "Location explicitly allows Philippines"
 
-    # Regional locations that include the Philippines
     apac_terms = [
         "apac",
         "asia pacific",
@@ -70,10 +70,9 @@ def check_philippines_eligibility(job):
     ]
 
     if any(term in location for term in apac_terms):
-        return True, "Location explicitly allows APAC/Asia applicants"
+        return "publish", "Location explicitly allows APAC/Asia applicants"
 
-    # Explicit worldwide locations
-    worldwide_locations = [
+    worldwide_terms = [
         "worldwide",
         "anywhere",
         "global",
@@ -83,21 +82,19 @@ def check_philippines_eligibility(job):
         "remote - worldwide",
     ]
 
-    if any(term in location for term in worldwide_locations):
-        return True, "Location explicitly allows worldwide applicants"
+    if any(term in location for term in worldwide_terms):
+        return "publish", "Location explicitly allows worldwide applicants"
 
-    # Generic remote locations are too ambiguous to publish automatically.
-    generic_remote_locations = [
+    generic_remote = [
         "remote",
-        "remote - remote",
         "fully remote",
+        "remote - remote",
     ]
 
-    if location in generic_remote_locations:
-        return False, "Remote location is ambiguous"
+    if location in generic_remote or not location:
+        return "review", "Remote/location eligibility is ambiguous"
 
-    # Everything else requires explicit PH/APAC/worldwide evidence.
-    return False, f"No explicit Philippines eligibility: {job.get('location')}"
+    return "reject", f"No explicit Philippines eligibility: {job.get('location')}"
 
 
 def classify_job(job):
@@ -229,8 +226,9 @@ def main():
     boards = load_greenhouse_boards()
 
     total_fetched = 0
-    total_eligible = 0
-    total_saved = 0
+total_published = 0
+total_review = 0
+total_rejected = 0
 
     for board_config in boards:
         company = board_config["company"]
@@ -254,47 +252,71 @@ def main():
                 board=board,
             )
 
-            eligible, reason = check_philippines_eligibility(job)
+            decision, reason = check_philippines_eligibility(job)
 
-            if not eligible:
-                continue
+if decision == "publish":
+    total_published += 1
 
-            total_eligible += 1
+    job["philippines_eligible"] = True
+    job["classification_reason"] = reason
+    job["category"] = classify_job(job)
 
-            job["philippines_eligible"] = True
-            job["classification_reason"] = reason
-            job["category"] = classify_job(job)
+    try:
+        (
+            supabase.table("jobs")
+            .upsert(
+                job,
+                on_conflict="source,source_job_id",
+            )
+            .execute()
+        )
 
-            try:
-                (
-                    supabase.table("jobs")
-                    .upsert(
-                        job,
-                        on_conflict="source,source_job_id",
-                    )
-                    .execute()
-                )
+        print(
+            f"  PUBLISHED: {job['title']} "
+            f"[{job['category']}] "
+            f"- {job['location']}"
+        )
 
-                total_saved += 1
+    except Exception as error:
+        print(f"  Database error: {error}")
 
-                print(
-                    f"  SAVED: {job['title']} "
-                    f"[{job['category']}] "
-                    f"- {job['location']}"
-                )
+else:
+    if decision == "review":
+        total_review += 1
+    else:
+        total_rejected += 1
 
-            except Exception as error:
-                print(
-                    f"  Database error for "
-                    f"{job['title']}: {error}"
-                )
+    review_record = {
+        "title": job.get("title"),
+        "company": job.get("company"),
+        "location": job.get("location"),
+        "source": job.get("source"),
+        "source_job_id": job.get("source_job_id"),
+        "job_url": job.get("job_url"),
+        "decision": decision,
+        "reason": reason,
+    }
 
-    print("\n-----------------------------")
-    print("COLLECTION COMPLETE")
-    print("-----------------------------")
-    print(f"Fetched:  {total_fetched}")
-    print(f"Eligible: {total_eligible}")
-    print(f"Saved:    {total_saved}")
+    try:
+        (
+            supabase.table("job_reviews")
+            .upsert(
+                review_record,
+                on_conflict="source,source_job_id",
+            )
+            .execute()
+        )
+
+    except Exception as error:
+        print(f"  Review database error: {error}")
+
+   print("\n-----------------------------")
+print("COLLECTION COMPLETE")
+print("-----------------------------")
+print(f"Fetched:   {total_fetched}")
+print(f"Published: {total_published}")
+print(f"Review:    {total_review}")
+print(f"Rejected:  {total_rejected}")
 
 
 if __name__ == "__main__":
