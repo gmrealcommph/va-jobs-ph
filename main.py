@@ -179,6 +179,7 @@ def check_va_relevance(job):
         # Engineering / development
         "engineer",
         "engineering",
+        "developer",
         "software developer",
         "software development",
         "web developer",
@@ -193,6 +194,7 @@ def check_va_relevance(job):
         "python engineer",
         "rust developer",
         "rust engineer",
+        
 
         # Infrastructure / cloud / embedded
         "devops",
@@ -571,6 +573,8 @@ def classify_job(job):
                 "hr specialist",
                 "hr coordinator",
                 "people operations",
+                "hr assistant",
+                "hr generalist",
             ],
         ),
         (
@@ -598,6 +602,23 @@ def classify_job(job):
                 "data encoder",
             ],
         ),
+        (
+            "Project Management",
+            [
+                "project manager",
+                "project management",
+            ],
+        ),
+              
+        (
+            "Account Management",
+            [
+                "account manager",
+                "client account manager",
+                "client success manager",
+            ],
+        ),
+        
         (
             "Operations & Admin",
             [
