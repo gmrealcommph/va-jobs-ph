@@ -123,6 +123,55 @@ def clean_text(value):
 
     return value.strip()
 
+def check_remote_status(job):
+    """
+    Determine whether a job has sufficient evidence that it is remote.
+
+    Returns:
+        remote   -> confirmed remote
+        review   -> remote status is unknown
+        onsite   -> confirmed non-remote
+    """
+
+    remote = job.get("remote")
+    location = clean_text(job.get("location")).lower()
+
+    # Structured remote flag from the ATS
+    if remote is True:
+        return (
+            "remote",
+            "ATS explicitly marks job as remote",
+        )
+
+    # Location itself explicitly says remote
+    remote_terms = [
+        "remote",
+        "work from home",
+        "work-from-home",
+        "wfh",
+        "home based",
+        "home-based",
+    ]
+
+    if any(term in location for term in remote_terms):
+        return (
+            "remote",
+            "Location explicitly indicates remote work",
+        )
+
+    # We don't yet have enough evidence to call it on-site.
+    # Some ATS platforms simply omit their remote flag.
+    if remote is None:
+        return (
+            "review",
+            "Remote status is not specified",
+        )
+
+    return (
+        "onsite",
+        "ATS does not mark job as remote",
+    )
+
 
 def check_philippines_eligibility(job):
     """
