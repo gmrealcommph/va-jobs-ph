@@ -793,7 +793,7 @@ def main():
     # Shared job processor
     # =========================================================
 
-        def process_job(job, raw_title="Unknown"):
+    def process_job(job, raw_title="Unknown"):
         nonlocal total_published
         nonlocal total_review
         nonlocal total_rejected
