@@ -6,6 +6,7 @@ import html
 from supabase import create_client
 from collectors.greenhouse import (
     fetch_greenhouse_jobs,
+    fetch_greenhouse_logo,
     normalize_greenhouse_job,
 )
 from collectors.lever import fetch_lever_jobs
@@ -1483,7 +1484,7 @@ def main():
                 f"{error}"
             )
 
-    # =====================================================
+        # =====================================================
     # GREENHOUSE
     # =====================================================
 
@@ -1527,6 +1528,40 @@ def main():
 
         total_fetched += len(raw_jobs)
 
+        # ---------------------------------------------
+        # COMPANY LOGO
+        # ---------------------------------------------
+        #
+        # Fetch branding once per Greenhouse board.
+        # Missing logos are completely valid and
+        # simply result in company_logo_url = None.
+
+        try:
+            company_logo_url = (
+                fetch_greenhouse_logo(
+                    board
+                )
+            )
+
+        except Exception as error:
+            company_logo_url = None
+
+            print(
+                f"  LOGO LOOKUP SKIPPED: "
+                f"{company} - {error}"
+            )
+
+        if company_logo_url:
+            print(
+                f"  LOGO FOUND: "
+                f"{company}"
+            )
+        else:
+            print(
+                f"  LOGO NOT FOUND: "
+                f"{company}"
+            )
+
         # Fetch succeeded, so this board can be reconciled.
         successful_boards.append({
             "source": "greenhouse",
@@ -1546,6 +1581,9 @@ def main():
                         raw_job,
                         company=company,
                         board=board,
+                        company_logo_url=(
+                            company_logo_url
+                        ),
                     )
                 )
 
