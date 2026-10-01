@@ -433,7 +433,9 @@ def check_va_relevance(job):
         "python engineer",
         "rust developer",
         "rust engineer",
-        
+
+        # Technical writing
+        "technical author",
 
         # Infrastructure / cloud / embedded
         "devops",
@@ -519,8 +521,6 @@ def check_va_relevance(job):
     # ---------------------------------------------------------
     # 3. SPECIALIZED ENTERPRISE / PARTNER SALES
     # ---------------------------------------------------------
-    # These are remote jobs, but they're not really the type of
-    # Philippines-focused VA / remote jobs we're building around.
 
     enterprise_sales_exclusions = [
         "enterprise account executive",
@@ -687,7 +687,6 @@ def check_va_relevance(job):
     # not a dumping ground for every unknown remote job.
 
     review_terms = [
-        "technical author",
         "mobility specialist",
         "content specialist",
         "communications specialist",
