@@ -153,7 +153,6 @@ def normalize_lever_job(
 
         text = str(value)
 
-        # Preserve line breaks before stripping HTML.
         text = re.sub(
             r"<br\s*/?>",
             "\n",
@@ -168,7 +167,6 @@ def normalize_lever_job(
             flags=re.IGNORECASE,
         )
 
-        # Preserve list items.
         text = re.sub(
             r"<li[^>]*>",
             "- ",
@@ -183,7 +181,6 @@ def normalize_lever_job(
             flags=re.IGNORECASE,
         )
 
-        # Remove remaining HTML tags.
         text = re.sub(
             r"<[^>]+>",
             "",
@@ -192,19 +189,16 @@ def normalize_lever_job(
 
         text = html.unescape(text)
 
-        # Normalise non-breaking spaces.
         text = text.replace(
             "\xa0",
             " ",
         )
 
-        # Remove unnecessary whitespace around lines.
         lines = [
             line.strip()
             for line in text.splitlines()
         ]
 
-        # Collapse excessive blank lines.
         cleaned_lines = []
         previous_blank = False
 
@@ -400,7 +394,7 @@ def normalize_lever_job(
             )
 
     # -------------------------------------------------
-    # 4. Additional information
+    # 4. Additional information / benefits
     # -------------------------------------------------
 
     additional_plain = (
@@ -409,7 +403,7 @@ def normalize_lever_job(
     ).strip()
 
     if additional_plain:
-        description_parts.append(
+        additional_text = (
             additional_plain
         )
 
@@ -423,9 +417,35 @@ def normalize_lever_job(
             additional_html
         )
 
-        if additional_text:
+    if additional_text:
+        additional_lines = [
+            line.strip()
+            for line in additional_text.splitlines()
+            if line.strip()
+        ]
+
+        if additional_lines:
+            first_line = (
+                additional_lines[0]
+            )
+
+            remaining_lines = (
+                additional_lines[1:]
+            )
+
+            additional_parts = [
+                first_line
+            ]
+
+            for line in remaining_lines:
+                additional_parts.append(
+                    f"- {line}"
+                )
+
             description_parts.append(
-                additional_text
+                "\n".join(
+                    additional_parts
+                )
             )
 
     # -------------------------------------------------
