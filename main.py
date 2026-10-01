@@ -1667,7 +1667,7 @@ def main():
                     f"- {error}"
                 )
 
-    # =====================================================
+        # =====================================================
     # LEVER
     # =====================================================
 
@@ -1711,6 +1711,40 @@ def main():
 
         total_fetched += len(raw_jobs)
 
+        # ---------------------------------------------
+        # COMPANY LOGO
+        # ---------------------------------------------
+        #
+        # Fetch branding once per Lever board.
+        # Missing logos are completely valid and
+        # simply result in company_logo_url = None.
+
+        try:
+            company_logo_url = (
+                fetch_lever_company_logo(
+                    slug
+                )
+            )
+
+        except Exception as error:
+            company_logo_url = None
+
+            print(
+                f"  LOGO LOOKUP SKIPPED: "
+                f"{company} - {error}"
+            )
+
+        if company_logo_url:
+            print(
+                f"  LOGO FOUND: "
+                f"{company}"
+            )
+        else:
+            print(
+                f"  LOGO NOT FOUND: "
+                f"{company}"
+            )
+
         successful_boards.append({
             "source": "lever",
             "source_board": slug,
@@ -1729,6 +1763,9 @@ def main():
                         raw_job,
                         company=company,
                         slug=slug,
+                        company_logo_url=(
+                            company_logo_url
+                        ),
                     )
                 )
 
