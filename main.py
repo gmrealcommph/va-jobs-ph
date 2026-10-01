@@ -121,6 +121,14 @@ def normalize_lever_job(
     """
     Convert a Lever job into the same structure used by our
     Greenhouse jobs and Supabase jobs table.
+
+    Lever can split a job description across:
+    - descriptionPlain
+    - lists
+    - additionalPlain
+
+    Combine all available sections so VeeAys receives the
+    complete job description.
     """
 
     categories = (
@@ -133,20 +141,112 @@ def normalize_lever_job(
         or ""
     )
 
-    description_parts = [
-        raw_job.get(
-            "descriptionPlain"
-        ) or "",
-        raw_job.get(
-            "additionalPlain"
-        ) or "",
-    ]
+    description_parts = []
+
+    # Main job description
+    description_plain = (
+        raw_job.get("descriptionPlain")
+        or ""
+    ).strip()
+
+    if description_plain:
+        description_parts.append(
+            description_plain
+        )
+
+    # Structured Lever sections such as:
+    # Responsibilities, Requirements, Benefits, etc.
+    lists = (
+        raw_job.get("lists")
+        or []
+    )
+
+    for section in lists:
+        if not isinstance(
+            section,
+            dict,
+        ):
+            continue
+
+        heading = (
+            section.get("text")
+            or ""
+        ).strip()
+
+        content = (
+            section.get("content")
+            or ""
+        ).strip()
+
+        if not heading and not content:
+            continue
+
+        if heading:
+            description_parts.append(
+                heading
+            )
+
+        if content:
+            # Lever's list content may contain HTML,
+            # even though descriptionPlain is plain text.
+            clean_content = re.sub(
+                r"<br\s*/?>",
+                "\n",
+                content,
+                flags=re.IGNORECASE,
+            )
+
+            clean_content = re.sub(
+                r"</li\s*>",
+                "\n",
+                clean_content,
+                flags=re.IGNORECASE,
+            )
+
+            clean_content = re.sub(
+                r"<li[^>]*>",
+                "- ",
+                clean_content,
+                flags=re.IGNORECASE,
+            )
+
+            clean_content = re.sub(
+                r"<[^>]+>",
+                "",
+                clean_content,
+            )
+
+            clean_content = html.unescape(
+                clean_content
+            )
+
+            clean_content = re.sub(
+                r"\n\s*\n+",
+                "\n",
+                clean_content,
+            ).strip()
+
+            if clean_content:
+                description_parts.append(
+                    clean_content
+                )
+
+    # Additional text at the bottom of a Lever posting
+    additional_plain = (
+        raw_job.get("additionalPlain")
+        or ""
+    ).strip()
+
+    if additional_plain:
+        description_parts.append(
+            additional_plain
+        )
 
     description = "\n\n".join(
         part
         for part in description_parts
         if part
-    )
+    ).strip()
 
     job_id = raw_job.get("id")
 
