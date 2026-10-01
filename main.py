@@ -101,7 +101,8 @@ def normalize_lever_job(raw_job, company, slug):
         "description": description,
         "category": None,
         "location": location,
-        "remote": "remote" in location.lower(),
+        "remote": raw_job.get("workplaceType") == "remote",
+        "workplace_type": raw_job.get("workplaceType", "unspecified"),
         "philippines_eligible": False,
         "source": "lever",
         "source_job_id": str(job_id) if job_id else None,
@@ -1037,6 +1038,32 @@ def main():
                 queue_review_job(job, "review", reason)
                 total_review += 1
                 return
+
+            # -------------------------------------------------
+            # LEVER WORKPLACE TYPE
+            # -------------------------------------------------
+
+            if job.get("source") == "lever":
+                workplace_type = (
+                    job.get("workplace_type") or ""
+                ).strip().lower()
+
+                if workplace_type in {
+                    "hybrid",
+                    "on-site",
+                    "onsite",
+                }:
+                    queue_review_job(
+                        job,
+                        "reject",
+                        f"Lever workplace type is {workplace_type}",
+                    )
+                    total_rejected += 1
+                    return
+
+            # -------------------------------------------------
+            # ASHBY REMOTE STATUS
+            # -------------------------------------------------
 
             if job.get("source") == "ashby":
                 remote_decision, remote_reason = check_remote_status(job)
