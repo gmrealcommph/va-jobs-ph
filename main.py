@@ -55,13 +55,32 @@ def normalize_ashby_job(raw_job, company, slug):
 
     job_id = raw_job.get("id")
 
+    workplace_type = (
+        raw_job.get("workplaceType")
+        or ""
+    ).strip()
+
+    # Ashby workplaceType values include Remote, Hybrid,
+    # and OnSite. Prefer this structured value when present.
+    if workplace_type.lower() == "remote":
+        remote = True
+    elif workplace_type.lower() in {
+        "hybrid",
+        "onsite",
+        "on-site",
+    }:
+        remote = False
+    else:
+        remote = raw_job.get("isRemote")
+
     return {
         "title": raw_job.get("title") or "",
         "company": company,
         "description": description,
         "category": None,
         "location": location,
-        "remote": raw_job.get("isRemote"),
+        "remote": remote,
+        "workplace_type": workplace_type or "unspecified",
         "philippines_eligible": False,
         "source": "ashby",
         "source_job_id": str(job_id) if job_id else None,
