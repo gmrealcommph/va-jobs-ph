@@ -122,13 +122,14 @@ def normalize_lever_job(
     Convert a Lever job into the same structure used by our
     Greenhouse jobs and Supabase jobs table.
 
-    Lever can split a job description across:
-    - descriptionPlain
+    Lever may split a posting across:
+    - descriptionPlain / description / descriptionBody
     - lists
-    - additionalPlain
+    - salaryRange
+    - additionalPlain / additional
 
-    Combine all available sections so VeeAys receives the
-    complete job description.
+    Build one complete plain-text description from all
+    available sections.
     """
 
     categories = (
@@ -141,11 +142,97 @@ def normalize_lever_job(
         or ""
     )
 
+    def html_to_text(value):
+        """
+        Convert Lever HTML into readable plain text while
+        preserving useful headings, line breaks, and lists.
+        """
+
+        if not value:
+            return ""
+
+        text = str(value)
+
+        # Preserve line breaks before stripping HTML.
+        text = re.sub(
+            r"<br\s*/?>",
+            "\n",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        text = re.sub(
+            r"</(?:div|p|h[1-6])\s*>",
+            "\n\n",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        # Preserve list items.
+        text = re.sub(
+            r"<li[^>]*>",
+            "- ",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        text = re.sub(
+            r"</li\s*>",
+            "\n",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove remaining HTML tags.
+        text = re.sub(
+            r"<[^>]+>",
+            "",
+            text,
+        )
+
+        text = html.unescape(text)
+
+        # Normalise non-breaking spaces.
+        text = text.replace(
+            "\xa0",
+            " ",
+        )
+
+        # Remove unnecessary whitespace around lines.
+        lines = [
+            line.strip()
+            for line in text.splitlines()
+        ]
+
+        # Collapse excessive blank lines.
+        cleaned_lines = []
+        previous_blank = False
+
+        for line in lines:
+            is_blank = not line
+
+            if (
+                is_blank
+                and previous_blank
+            ):
+                continue
+
+            cleaned_lines.append(line)
+            previous_blank = is_blank
+
+        return "\n".join(
+            cleaned_lines
+        ).strip()
+
     description_parts = []
 
-    # Main job description
+    # -------------------------------------------------
+    # 1. Main description
+    # -------------------------------------------------
+
     description_plain = (
         raw_job.get("descriptionPlain")
+        or raw_job.get("descriptionBodyPlain")
         or ""
     ).strip()
 
@@ -154,8 +241,26 @@ def normalize_lever_job(
             description_plain
         )
 
-    # Structured Lever sections such as:
-    # Responsibilities, Requirements, Benefits, etc.
+    else:
+        description_html = (
+            raw_job.get("description")
+            or raw_job.get("descriptionBody")
+            or ""
+        )
+
+        description_text = html_to_text(
+            description_html
+        )
+
+        if description_text:
+            description_parts.append(
+                description_text
+            )
+
+    # -------------------------------------------------
+    # 2. Structured Lever sections
+    # -------------------------------------------------
+
     lists = (
         raw_job.get("lists")
         or []
@@ -173,65 +278,131 @@ def normalize_lever_job(
             or ""
         ).strip()
 
-        content = (
+        content = html_to_text(
             section.get("content")
             or ""
-        ).strip()
+        )
 
-        if not heading and not content:
-            continue
+        section_parts = []
 
         if heading:
-            description_parts.append(
+            section_parts.append(
                 heading
             )
 
         if content:
-            # Lever's list content may contain HTML,
-            # even though descriptionPlain is plain text.
-            clean_content = re.sub(
-                r"<br\s*/?>",
-                "\n",
-                content,
-                flags=re.IGNORECASE,
+            section_parts.append(
+                content
             )
 
-            clean_content = re.sub(
-                r"</li\s*>",
-                "\n",
-                clean_content,
-                flags=re.IGNORECASE,
+        if section_parts:
+            description_parts.append(
+                "\n".join(
+                    section_parts
+                )
             )
 
-            clean_content = re.sub(
-                r"<li[^>]*>",
-                "- ",
-                clean_content,
-                flags=re.IGNORECASE,
+    # -------------------------------------------------
+    # 3. Compensation
+    # -------------------------------------------------
+
+    salary_range = (
+        raw_job.get("salaryRange")
+        or {}
+    )
+
+    if isinstance(
+        salary_range,
+        dict,
+    ):
+        minimum = salary_range.get(
+            "min"
+        )
+
+        maximum = salary_range.get(
+            "max"
+        )
+
+        currency = (
+            salary_range.get("currency")
+            or ""
+        ).upper()
+
+        interval = (
+            salary_range.get("interval")
+            or ""
+        )
+
+        interval_labels = {
+            "per-year-salary":
+                "per year",
+            "per-month-salary":
+                "per month",
+            "per-week-salary":
+                "per week",
+            "per-day-salary":
+                "per day",
+            "per-hour-salary":
+                "per hour",
+        }
+
+        interval_text = (
+            interval_labels.get(
+                interval,
+                interval.replace(
+                    "-salary",
+                    "",
+                ).replace(
+                    "per-",
+                    "per ",
+                ).replace(
+                    "-",
+                    " ",
+                ),
+            )
+        )
+
+        salary_text = ""
+
+        if (
+            minimum is not None
+            and maximum is not None
+        ):
+            salary_text = (
+                f"{currency} "
+                f"{minimum:,.0f}"
+                f"–"
+                f"{maximum:,.0f}"
             )
 
-            clean_content = re.sub(
-                r"<[^>]+>",
-                "",
-                clean_content,
+        elif minimum is not None:
+            salary_text = (
+                f"{currency} "
+                f"{minimum:,.0f}+"
             )
 
-            clean_content = html.unescape(
-                clean_content
+        elif maximum is not None:
+            salary_text = (
+                f"Up to "
+                f"{currency} "
+                f"{maximum:,.0f}"
             )
 
-            clean_content = re.sub(
-                r"\n\s*\n+",
-                "\n",
-                clean_content,
-            ).strip()
-
-            if clean_content:
-                description_parts.append(
-                    clean_content
+        if salary_text:
+            if interval_text:
+                salary_text += (
+                    f" {interval_text}"
                 )
 
-    # Additional text at the bottom of a Lever posting
+            description_parts.append(
+                "Compensation\n"
+                + salary_text
+            )
+
+    # -------------------------------------------------
+    # 4. Additional information
+    # -------------------------------------------------
+
     additional_plain = (
         raw_job.get("additionalPlain")
         or ""
@@ -242,10 +413,30 @@ def normalize_lever_job(
             additional_plain
         )
 
+    else:
+        additional_html = (
+            raw_job.get("additional")
+            or ""
+        )
+
+        additional_text = html_to_text(
+            additional_html
+        )
+
+        if additional_text:
+            description_parts.append(
+                additional_text
+            )
+
+    # -------------------------------------------------
+    # Final combined description
+    # -------------------------------------------------
+
     description = "\n\n".join(
-        part
+        part.strip()
         for part in description_parts
         if part
+        and part.strip()
     ).strip()
 
     job_id = raw_job.get("id")
