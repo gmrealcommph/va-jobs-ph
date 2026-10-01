@@ -1064,6 +1064,120 @@ def flush_job_batches(
         f"{len(review_jobs)}"
     )
 
+def reconcile_expired_jobs(
+    supabase,
+    successful_boards,
+    batch_size=200,
+):
+    """
+    Mark published jobs inactive when they disappear from a
+    successfully fetched ATS board.
+
+    Safety rules:
+    - Only reconcile boards that fetched successfully.
+    - Scope every comparison to source + source_board.
+    - Never expire anything when a board fetch failed.
+    - Never expire anything when the current board returned zero jobs.
+      A zero-job response is treated conservatively.
+    """
+
+    print("\n================================")
+    print("RECONCILING EXPIRED JOBS")
+    print("================================")
+
+    total_expired = 0
+
+    for board_data in successful_boards:
+        source = board_data["source"]
+        source_board = board_data["source_board"]
+        current_job_ids = board_data["job_ids"]
+
+        # -----------------------------------------------------
+        # SAFETY: DON'T CLEAN A BOARD THAT RETURNED ZERO JOBS
+        # -----------------------------------------------------
+
+        if not current_job_ids:
+            print(
+                f"  SKIPPED: {source}/{source_board} "
+                f"returned zero jobs."
+            )
+            continue
+
+        try:
+            # Get currently stored published jobs for this exact board.
+            response = (
+                supabase.table("jobs")
+                .select("source_job_id,status")
+                .eq("source", source)
+                .eq("source_board", source_board)
+                .execute()
+            )
+
+            stored_jobs = response.data or []
+
+            current_job_ids = {
+                str(job_id)
+                for job_id in current_job_ids
+                if job_id is not None
+            }
+
+            stale_job_ids = [
+                str(record.get("source_job_id"))
+                for record in stored_jobs
+                if record.get("source_job_id") is not None
+                and str(record.get("source_job_id"))
+                not in current_job_ids
+                and record.get("status") != "inactive"
+            ]
+
+            if not stale_job_ids:
+                print(
+                    f"  {source}/{source_board}: "
+                    f"0 expired jobs."
+                )
+                continue
+
+            # Mark stale jobs inactive in manageable batches.
+            for start in range(
+                0,
+                len(stale_job_ids),
+                batch_size,
+            ):
+                id_batch = stale_job_ids[
+                    start:start + batch_size
+                ]
+
+                (
+                    supabase.table("jobs")
+                    .update({"status": "inactive"})
+                    .eq("source", source)
+                    .eq("source_board", source_board)
+                    .in_("source_job_id", id_batch)
+                    .execute()
+                )
+
+            total_expired += len(stale_job_ids)
+
+            print(
+                f"  {source}/{source_board}: "
+                f"{len(stale_job_ids)} expired job(s) "
+                f"marked inactive."
+            )
+
+        except Exception as error:
+            # Lifecycle cleanup must never bring down the collector.
+            print(
+                f"  RECONCILE ERROR: "
+                f"{source}/{source_board} - {error}"
+            )
+
+    print(
+        f"Total expired jobs marked inactive: "
+        f"{total_expired}"
+    )
+
+    return total_expired
+
 def main():
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError(
@@ -1085,10 +1199,15 @@ def main():
     published_jobs = []
     review_jobs = []
 
+    # Contains only boards whose ATS fetch completed successfully.
+    # These are the only boards eligible for lifecycle cleanup.
+    successful_boards = []
+
     def queue_published_job(job, reason):
         job["philippines_eligible"] = True
         job["classification_reason"] = reason
         job["category"] = classify_job(job)
+        job["status"] = "active"
         published_jobs.append(job.copy())
 
     def queue_review_job(job, decision, reason):
@@ -1104,14 +1223,15 @@ def main():
         })
 
     def process_job(job, raw_title="Unknown"):
-        nonlocal total_published, total_review, total_rejected, total_errors
+        nonlocal total_published
+        nonlocal total_review
+        nonlocal total_rejected
+        nonlocal total_errors
 
         try:
-            # -------------------------------------------------
-            # ACTIVE VACANCY CHECK
-            # -------------------------------------------------
-
-            vacancy_decision, vacancy_reason = check_active_vacancy(job)
+            vacancy_decision, vacancy_reason = (
+                check_active_vacancy(job)
+            )
 
             if vacancy_decision == "reject":
                 queue_review_job(
@@ -1122,11 +1242,9 @@ def main():
                 total_rejected += 1
                 return
 
-            # -------------------------------------------------
-            # ROLE RELEVANCE
-            # -------------------------------------------------
-
-            relevance, relevance_reason = check_va_relevance(job)
+            relevance, relevance_reason = (
+                check_va_relevance(job)
+            )
 
             if relevance == "irrelevant":
                 queue_review_job(
@@ -1137,11 +1255,9 @@ def main():
                 total_rejected += 1
                 return
 
-            # -------------------------------------------------
-            # PHILIPPINES ELIGIBILITY
-            # -------------------------------------------------
-
-            decision, reason = check_philippines_eligibility(job)
+            decision, reason = (
+                check_philippines_eligibility(job)
+            )
 
             if decision == "reject":
                 queue_review_job(
@@ -1152,12 +1268,9 @@ def main():
                 total_rejected += 1
                 return
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # LEVER WORKPLACE TYPE
-            # -------------------------------------------------
-            # A structured Hybrid/Onsite value is definitive,
-            # so reject it before sending ambiguous roles to
-            # manual Review.
+            # ---------------------------------------------
 
             if job.get("source") == "lever":
                 workplace_type = (
@@ -1172,19 +1285,22 @@ def main():
                     queue_review_job(
                         job,
                         "reject",
-                        f"Lever workplace type is {workplace_type}",
+                        (
+                            "Lever workplace type is "
+                            f"{workplace_type}"
+                        ),
                     )
                     total_rejected += 1
                     return
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # ASHBY REMOTE STATUS
-            # -------------------------------------------------
-            # Ashby remote evidence is also checked before
-            # ambiguous relevance/geography goes to Review.
+            # ---------------------------------------------
 
             if job.get("source") == "ashby":
-                remote_decision, remote_reason = check_remote_status(job)
+                remote_decision, remote_reason = (
+                    check_remote_status(job)
+                )
 
                 if remote_decision == "onsite":
                     queue_review_job(
@@ -1204,14 +1320,16 @@ def main():
                     total_review += 1
                     return
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # AMBIGUOUS ROLE / GEOGRAPHY
-            # -------------------------------------------------
+            # ---------------------------------------------
 
             if relevance == "review":
                 combined_reason = (
-                    f"{relevance_reason}. Geography: {reason}"
+                    f"{relevance_reason}. "
+                    f"Geography: {reason}"
                 )
+
                 queue_review_job(
                     job,
                     "review",
@@ -1229,21 +1347,29 @@ def main():
                 total_review += 1
                 return
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # PUBLISH
-            # -------------------------------------------------
+            # ---------------------------------------------
 
             queue_published_job(job, reason)
             total_published += 1
 
             print(
                 f"  PUBLISHED: {job['title']} "
-                f"[{job['category']}] - {job['location']}"
+                f"[{job['category']}] - "
+                f"{job['location']}"
             )
 
         except Exception as error:
             total_errors += 1
-            print(f"  JOB ERROR: {raw_title} - {error}")
+            print(
+                f"  JOB ERROR: "
+                f"{raw_title} - {error}"
+            )
+
+    # =====================================================
+    # GREENHOUSE
+    # =====================================================
 
     print("\n================================")
     print("GREENHOUSE")
@@ -1253,7 +1379,9 @@ def main():
         company = board_config["company"]
         board = board_config["board"]
 
-        print(f"\nChecking {company} ({board})...")
+        print(
+            f"\nChecking {company} ({board})..."
+        )
 
         try:
             raw_jobs = fetch_greenhouse_jobs(board)
@@ -1265,6 +1393,17 @@ def main():
         print(f"  Found {len(raw_jobs)} jobs.")
         total_fetched += len(raw_jobs)
 
+        # Fetch succeeded, so this board can be reconciled.
+        successful_boards.append({
+            "source": "greenhouse",
+            "source_board": board,
+            "job_ids": {
+                str(raw_job.get("id"))
+                for raw_job in raw_jobs
+                if raw_job.get("id") is not None
+            },
+        })
+
         for raw_job in raw_jobs:
             try:
                 job = normalize_greenhouse_job(
@@ -1272,13 +1411,23 @@ def main():
                     company=company,
                     board=board,
                 )
-                process_job(job, raw_job.get("title", "Unknown"))
+
+                process_job(
+                    job,
+                    raw_job.get("title", "Unknown"),
+                )
+
             except Exception as error:
                 total_errors += 1
                 print(
                     f"  JOB ERROR: "
-                    f"{raw_job.get('title', 'Unknown')} - {error}"
+                    f"{raw_job.get('title', 'Unknown')} "
+                    f"- {error}"
                 )
+
+    # =====================================================
+    # LEVER
+    # =====================================================
 
     print("\n================================")
     print("LEVER")
@@ -1288,7 +1437,9 @@ def main():
         company = board_config["name"]
         slug = board_config["slug"]
 
-        print(f"\nChecking {company} ({slug})...")
+        print(
+            f"\nChecking {company} ({slug})..."
+        )
 
         try:
             raw_jobs = fetch_lever_jobs(slug)
@@ -1300,6 +1451,16 @@ def main():
         print(f"  Found {len(raw_jobs)} jobs.")
         total_fetched += len(raw_jobs)
 
+        successful_boards.append({
+            "source": "lever",
+            "source_board": slug,
+            "job_ids": {
+                str(raw_job.get("id"))
+                for raw_job in raw_jobs
+                if raw_job.get("id") is not None
+            },
+        })
+
         for raw_job in raw_jobs:
             try:
                 job = normalize_lever_job(
@@ -1307,48 +1468,109 @@ def main():
                     company=company,
                     slug=slug,
                 )
-                process_job(job, raw_job.get("text", "Unknown"))
+
+                process_job(
+                    job,
+                    raw_job.get("text", "Unknown"),
+                )
+
             except Exception as error:
                 total_errors += 1
                 print(
                     f"  JOB ERROR: "
-                    f"{raw_job.get('text', 'Unknown')} - {error}"
+                    f"{raw_job.get('text', 'Unknown')} "
+                    f"- {error}"
                 )
 
-    print("\n==============================")
+    # =====================================================
+    # ASHBY
+    # =====================================================
+
+    print("\n================================")
     print("ASHBY")
-    print("==============================")
+    print("================================")
 
     for board in ashby_boards:
         slug = board["slug"]
         company = board["name"]
 
-        print(f"\nFetching Ashby jobs: {company} ({slug})")
+        print(
+            f"\nFetching Ashby jobs: "
+            f"{company} ({slug})"
+        )
 
         try:
             raw_jobs = fetch_ashby_jobs(slug)
-            print(f"Found {len(raw_jobs)} jobs")
-            total_fetched += len(raw_jobs)
 
-            for raw_job in raw_jobs:
-                job = normalize_ashby_job(raw_job, company, slug)
-                process_job(
-                    job,
-                    raw_title=raw_job.get("title", "Unknown"),
-                )
-
-        except Exception as exc:
+        except Exception as error:
             total_errors += 1
             print(
                 f"ERROR fetching Ashby board "
-                f"{company} ({slug}): {exc}"
+                f"{company} ({slug}): {error}"
             )
+            continue
+
+        print(f"Found {len(raw_jobs)} jobs")
+        total_fetched += len(raw_jobs)
+
+        successful_boards.append({
+            "source": "ashby",
+            "source_board": slug,
+            "job_ids": {
+                str(raw_job.get("id"))
+                for raw_job in raw_jobs
+                if raw_job.get("id") is not None
+            },
+        })
+
+        for raw_job in raw_jobs:
+            try:
+                job = normalize_ashby_job(
+                    raw_job,
+                    company,
+                    slug,
+                )
+
+                process_job(
+                    job,
+                    raw_title=raw_job.get(
+                        "title",
+                        "Unknown",
+                    ),
+                )
+
+            except Exception as error:
+                total_errors += 1
+                print(
+                    f"  JOB ERROR: "
+                    f"{raw_job.get('title', 'Unknown')} "
+                    f"- {error}"
+                )
+
+    # =====================================================
+    # DATABASE WRITE
+    # =====================================================
 
     flush_job_batches(
         supabase,
         published_jobs,
         review_jobs,
     )
+
+    # =====================================================
+    # EXPIRED-JOB RECONCILIATION
+    # =====================================================
+    # Run this only AFTER current jobs have been written.
+    # Current jobs therefore remain/revert to status=active.
+
+    total_expired = reconcile_expired_jobs(
+        supabase,
+        successful_boards,
+    )
+
+    # =====================================================
+    # SUMMARY
+    # =====================================================
 
     print("\n================================")
     print("COLLECTION COMPLETE")
@@ -1357,6 +1579,7 @@ def main():
     print(f"Published: {total_published}")
     print(f"Review:    {total_review}")
     print(f"Rejected:  {total_rejected}")
+    print(f"Expired:   {total_expired}")
     print(f"Errors:    {total_errors}")
     print("================================")
 
