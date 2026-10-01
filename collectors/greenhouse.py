@@ -89,6 +89,7 @@ def normalize_greenhouse_job(job, company, board):
         "description": description,
         "location": location,
         "source": "greenhouse",
+        "source_board": board,
         "source_job_id": str(job.get("id")),
         "job_url": job.get("absolute_url"),
         "posted_at": job.get("updated_at"),
