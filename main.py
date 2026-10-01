@@ -9,7 +9,10 @@ from collectors.greenhouse import (
     fetch_greenhouse_logo,
     normalize_greenhouse_job,
 )
-from collectors.lever import fetch_lever_jobs
+from collectors.lever import (
+    fetch_lever_jobs,
+    fetch_lever_company_logo,
+)
 from collectors.ashby import (
     fetch_ashby_jobs,
     fetch_ashby_company_logo,
@@ -109,49 +112,109 @@ def normalize_ashby_job(
         "status": "active",
         "classification_reason": None,
     }
-def normalize_lever_job(raw_job, company, slug):
+def normalize_lever_job(
+    raw_job,
+    company,
+    slug,
+    company_logo_url=None,
+):
     """
     Convert a Lever job into the same structure used by our
     Greenhouse jobs and Supabase jobs table.
     """
 
-    categories = raw_job.get("categories") or {}
+    categories = (
+        raw_job.get("categories")
+        or {}
+    )
 
-    location = categories.get("location") or ""
+    location = (
+        categories.get("location")
+        or ""
+    )
 
     description_parts = [
-        raw_job.get("descriptionPlain") or "",
-        raw_job.get("additionalPlain") or "",
+        raw_job.get(
+            "descriptionPlain"
+        ) or "",
+        raw_job.get(
+            "additionalPlain"
+        ) or "",
     ]
 
     description = "\n\n".join(
-        part for part in description_parts if part
+        part
+        for part in description_parts
+        if part
     )
 
     job_id = raw_job.get("id")
 
     return {
-        "title": raw_job.get("text") or "",
-        "company": company,
-        "description": description,
-        "category": None,
-        "location": location,
-        "remote": raw_job.get("workplaceType") == "remote",
-        "workplace_type": raw_job.get(
-            "workplaceType",
-            "unspecified",
-        ),
-        "philippines_eligible": False,
-        "source": "lever",
-        "source_board": slug,
-        "source_job_id": str(job_id) if job_id else None,
-        "job_url": (
-            raw_job.get("hostedUrl")
-            or raw_job.get("applyUrl")
-        ),
-        "posted_at": None,
-        "status": "active",
-        "classification_reason": None,
+        "title":
+            raw_job.get("text")
+            or "",
+
+        "company":
+            company,
+
+        "company_logo_url":
+            company_logo_url,
+
+        "description":
+            description,
+
+        "category":
+            None,
+
+        "location":
+            location,
+
+        "remote":
+            raw_job.get(
+                "workplaceType"
+            ) == "remote",
+
+        "workplace_type":
+            raw_job.get(
+                "workplaceType",
+                "unspecified",
+            ),
+
+        "philippines_eligible":
+            False,
+
+        "source":
+            "lever",
+
+        "source_board":
+            slug,
+
+        "source_job_id":
+            (
+                str(job_id)
+                if job_id
+                else None
+            ),
+
+        "job_url":
+            (
+                raw_job.get(
+                    "hostedUrl"
+                )
+                or raw_job.get(
+                    "applyUrl"
+                )
+            ),
+
+        "posted_at":
+            None,
+
+        "status":
+            "active",
+
+        "classification_reason":
+            None,
     }
 
 
