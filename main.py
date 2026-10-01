@@ -160,7 +160,18 @@ def check_remote_status(job):
         onsite -> confirmed non-remote
     """
 
+    source = (
+        job.get("source")
+        or ""
+    ).strip().lower()
+
     remote = job.get("remote")
+
+    workplace_type = (
+        job.get("workplace_type")
+        or ""
+    ).strip().lower()
+
     location = clean_text(
         job.get("location")
     ).lower()
@@ -170,7 +181,30 @@ def check_remote_status(job):
     ).lower()
 
     # ---------------------------------------------------------
-    # 1. STRUCTURED ATS REMOTE FLAG
+    # 1. STRUCTURED WORKPLACE TYPE
+    # ---------------------------------------------------------
+
+    if workplace_type == "remote":
+        return (
+            "remote",
+            "ATS explicitly indicates remote work",
+        )
+
+    if workplace_type in {
+        "hybrid",
+        "onsite",
+        "on-site",
+    }:
+        return (
+            "onsite",
+            (
+                "ATS explicitly indicates "
+                f"{workplace_type} work"
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # 2. STRUCTURED REMOTE FLAG
     # ---------------------------------------------------------
 
     if remote is True:
@@ -180,7 +214,7 @@ def check_remote_status(job):
         )
 
     # ---------------------------------------------------------
-    # 2. LOCATION EXPLICITLY INDICATES REMOTE WORK
+    # 3. LOCATION EXPLICITLY INDICATES REMOTE WORK
     # ---------------------------------------------------------
 
     remote_location_terms = [
@@ -202,12 +236,8 @@ def check_remote_status(job):
         )
 
     # ---------------------------------------------------------
-    # 3. DESCRIPTION EXPLICITLY CONFIRMS REMOTE WORK
+    # 4. DESCRIPTION EXPLICITLY CONFIRMS REMOTE WORK
     # ---------------------------------------------------------
-    #
-    # Deliberately use strong phrases rather than simply
-    # searching for the word "remote". A description might say
-    # things such as "not remote" or discuss remote customers.
 
     explicit_remote_phrases = [
         "this is a remote position",
@@ -235,21 +265,29 @@ def check_remote_status(job):
     ):
         return (
             "remote",
-            "Job description explicitly confirms remote work",
+            (
+                "Job description explicitly "
+                "confirms remote work"
+            ),
         )
 
     # ---------------------------------------------------------
-    # 4. STRUCTURED ATS FLAG EXPLICITLY SAYS NON-REMOTE
+    # 5. EXPLICIT NON-REMOTE FLAG
     # ---------------------------------------------------------
+    #
+    # Ashby exposes a meaningful structured remote flag.
+    # For Greenhouse, remote=False is inferred by our own
+    # normalizer when no remote wording was found, so it must
+    # NOT automatically mean onsite.
 
-    if remote is False:
+    if source == "ashby" and remote is False:
         return (
             "onsite",
             "ATS explicitly marks job as non-remote",
         )
 
     # ---------------------------------------------------------
-    # 5. REMOTE STATUS UNKNOWN
+    # 6. REMOTE STATUS UNKNOWN
     # ---------------------------------------------------------
 
     return (
@@ -1297,7 +1335,10 @@ def main():
             # ASHBY REMOTE STATUS
             # ---------------------------------------------
 
-            if job.get("source") == "ashby":
+            if job.get("source") in {
+                "ashby",
+                "greenhouse",
+            }:
                 remote_decision, remote_reason = (
                     check_remote_status(job)
                 )
