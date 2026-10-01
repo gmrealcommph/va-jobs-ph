@@ -327,6 +327,74 @@ def check_philippines_eligibility(job):
         f"No explicit Philippines eligibility: {job.get('location')}",
     )
 
+def check_active_vacancy(job):
+    """
+    Detect postings that are talent pools, future opportunities,
+    expressions of interest, or otherwise not active vacancies.
+
+    Returns:
+        active -> appears to be a current vacancy
+        reject -> explicitly not a current vacancy
+    """
+
+    title = clean_text(job.get("title")).lower()
+    description = clean_text(job.get("description")).lower()
+
+    # ---------------------------------------------------------
+    # STRONG TITLE SIGNALS
+    # ---------------------------------------------------------
+
+    non_active_title_terms = [
+        "talent pool",
+        "talent community",
+        "future opportunities",
+        "future opportunity",
+        "expression of interest",
+        "expressions of interest",
+        "general application",
+        "general applications",
+    ]
+
+    if any(term in title for term in non_active_title_terms):
+        return (
+            "reject",
+            "Posting is a talent pool or future-opportunity listing",
+        )
+
+    # ---------------------------------------------------------
+    # STRONG DESCRIPTION SIGNALS
+    # ---------------------------------------------------------
+
+    non_active_description_phrases = [
+        "this is not an active job opening",
+        "this is not an active opening",
+        "this is not a current job opening",
+        "this is not a current opening",
+        "not currently an active opening",
+        "not currently hiring for this role",
+        "we are not currently hiring for this role",
+        "this posting is for future opportunities",
+        "this role is for future opportunities",
+        "this posting is for future openings",
+        "join our talent pool",
+        "join our talent community",
+        "expression of interest for future",
+    ]
+
+    if any(
+        phrase in description
+        for phrase in non_active_description_phrases
+    ):
+        return (
+            "reject",
+            "Posting explicitly states it is not a current vacancy",
+        )
+
+    return (
+        "active",
+        "Posting appears to be an active vacancy",
+    )
+
 def check_va_relevance(job):
     """
     Decide whether a geographically eligible job belongs on the
@@ -645,6 +713,8 @@ def check_va_relevance(job):
         "irrelevant",
         "Role does not match target VA/remote-work categories",
     )
+
+
 
 def classify_job(job):
     """
@@ -1031,17 +1101,48 @@ def main():
         nonlocal total_published, total_review, total_rejected, total_errors
 
         try:
+            # -------------------------------------------------
+            # ACTIVE VACANCY CHECK
+            # -------------------------------------------------
+
+            vacancy_decision, vacancy_reason = check_active_vacancy(job)
+
+            if vacancy_decision == "reject":
+                queue_review_job(
+                    job,
+                    "reject",
+                    vacancy_reason,
+                )
+                total_rejected += 1
+                return
+
+            # -------------------------------------------------
+            # ROLE RELEVANCE
+            # -------------------------------------------------
+
             relevance, relevance_reason = check_va_relevance(job)
 
             if relevance == "irrelevant":
-                queue_review_job(job, "reject", relevance_reason)
+                queue_review_job(
+                    job,
+                    "reject",
+                    relevance_reason,
+                )
                 total_rejected += 1
                 return
+
+            # -------------------------------------------------
+            # PHILIPPINES ELIGIBILITY
+            # -------------------------------------------------
 
             decision, reason = check_philippines_eligibility(job)
 
             if decision == "reject":
-                queue_review_job(job, "reject", reason)
+                queue_review_job(
+                    job,
+                    "reject",
+                    reason,
+                )
                 total_rejected += 1
                 return
 
@@ -1049,12 +1150,20 @@ def main():
                 combined_reason = (
                     f"{relevance_reason}. Geography: {reason}"
                 )
-                queue_review_job(job, "review", combined_reason)
+                queue_review_job(
+                    job,
+                    "review",
+                    combined_reason,
+                )
                 total_review += 1
                 return
 
             if decision == "review":
-                queue_review_job(job, "review", reason)
+                queue_review_job(
+                    job,
+                    "review",
+                    reason,
+                )
                 total_review += 1
                 return
 
@@ -1088,14 +1197,26 @@ def main():
                 remote_decision, remote_reason = check_remote_status(job)
 
                 if remote_decision == "onsite":
-                    queue_review_job(job, "reject", remote_reason)
+                    queue_review_job(
+                        job,
+                        "reject",
+                        remote_reason,
+                    )
                     total_rejected += 1
                     return
 
                 if remote_decision == "review":
-                    queue_review_job(job, "review", remote_reason)
+                    queue_review_job(
+                        job,
+                        "review",
+                        remote_reason,
+                    )
                     total_review += 1
                     return
+
+            # -------------------------------------------------
+            # PUBLISH
+            # -------------------------------------------------
 
             queue_published_job(job, reason)
             total_published += 1
