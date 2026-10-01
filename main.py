@@ -454,10 +454,27 @@ def check_va_relevance(job):
     title = clean_text(job.get("title")).lower()
 
     # ---------------------------------------------------------
-    # 1. TECHNICAL / SPECIALIST ROLES WE DON'T WANT
+    # 1. EXPLICIT VIRTUAL ASSISTANT ROLES
     # ---------------------------------------------------------
-    # Check these BEFORE positive matches. This prevents titles such as
-    # "Project Manager - Ubuntu Embedded Systems" from slipping through.
+    # Protect genuine VA titles before technical exclusions.
+    # Some VA jobs legitimately include technical, ecommerce,
+    # automation, or digital-infrastructure responsibilities.
+
+    explicit_va_terms = [
+        "virtual assistant",
+        "virtual administrative assistant",
+        "virtual executive assistant",
+    ]
+
+    if any(term in title for term in explicit_va_terms):
+        return (
+            "relevant",
+            "Title explicitly identifies a virtual assistant role",
+        )
+
+    # ---------------------------------------------------------
+    # 2. TECHNICAL / SPECIALIST ROLES WE DON'T WANT
+    # ---------------------------------------------------------
 
     technical_exclusions = [
         # Engineering / development
@@ -481,6 +498,13 @@ def check_va_relevance(job):
 
         # Technical writing
         "technical author",
+
+        # Technical account / customer success
+        "technical account manager",
+        "technical customer success",
+
+        # Technical project management
+        "it project manager",
 
         # Infrastructure / cloud / embedded
         "devops",
@@ -528,10 +552,6 @@ def check_va_relevance(job):
         # Highly technical relations
         "developer relations",
         "developer advocate",
-
-        # Architecture
-        "solutions architect",
-        "solution architect",
     ]
 
     if any(term in title for term in technical_exclusions):
@@ -541,7 +561,7 @@ def check_va_relevance(job):
         )
 
     # ---------------------------------------------------------
-    # 2. SENIOR LEADERSHIP
+    # 3. SENIOR LEADERSHIP / SENIOR PROJECT ROLES
     # ---------------------------------------------------------
 
     senior_terms = [
@@ -555,6 +575,8 @@ def check_va_relevance(job):
         "senior manager",
         "general manager",
         "team manager",
+        "senior project manager",
+        "enterprise project manager",
     ]
 
     if any(term in title for term in senior_terms):
@@ -564,7 +586,7 @@ def check_va_relevance(job):
         )
 
     # ---------------------------------------------------------
-    # 3. SPECIALIZED ENTERPRISE / PARTNER SALES
+    # 4. SPECIALIZED ENTERPRISE / PARTNER SALES
     # ---------------------------------------------------------
 
     enterprise_sales_exclusions = [
@@ -582,19 +604,24 @@ def check_va_relevance(job):
         "solutions sales",
     ]
 
-    if any(term in title for term in enterprise_sales_exclusions):
+    if any(
+        term in title
+        for term in enterprise_sales_exclusions
+    ):
         return (
             "irrelevant",
-            "Specialized enterprise/partner sales role outside target scope",
+            (
+                "Specialized enterprise/partner sales role "
+                "outside target scope"
+            ),
         )
 
     # ---------------------------------------------------------
-    # 4. HIGH-CONFIDENCE TARGET ROLES
+    # 5. HIGH-CONFIDENCE TARGET ROLES
     # ---------------------------------------------------------
 
     target_terms = [
-        # Virtual / executive / administrative assistance
-        "virtual assistant",
+        # Executive / administrative assistance
         "executive assistant",
         "personal assistant",
         "administrative assistant",
@@ -726,10 +753,8 @@ def check_va_relevance(job):
         )
 
     # ---------------------------------------------------------
-    # 5. GENUINELY AMBIGUOUS ROLES
+    # 6. GENUINELY AMBIGUOUS ROLES
     # ---------------------------------------------------------
-    # Keep this deliberately small. Review should be an exception,
-    # not a dumping ground for every unknown remote job.
 
     review_terms = [
         "mobility specialist",
@@ -750,7 +775,7 @@ def check_va_relevance(job):
         )
 
     # ---------------------------------------------------------
-    # 6. EVERYTHING ELSE
+    # 7. EVERYTHING ELSE
     # ---------------------------------------------------------
 
     return (
@@ -764,8 +789,8 @@ def classify_job(job):
     """
     Categorize primarily using the job title.
 
-    This prevents random words inside a long job description
-    from assigning an unrelated category.
+    More specific categories are checked before broader categories
+    so mixed-role titles land in the most useful category.
     """
 
     title = clean_text(job.get("title")).lower()
@@ -810,6 +835,16 @@ def classify_job(job):
                 "bdr",
             ],
         ),
+
+        # Social Media must be checked before Marketing.
+        (
+            "Social Media",
+            [
+                "social media",
+                "community manager",
+                "content creator",
+            ],
+        ),
         (
             "Marketing",
             [
@@ -817,14 +852,6 @@ def classify_job(job):
                 "growth marketing",
                 "seo",
                 "email marketer",
-            ],
-        ),
-        (
-            "Social Media",
-            [
-                "social media",
-                "community manager",
-                "content creator",
             ],
         ),
         (
@@ -894,7 +921,6 @@ def classify_job(job):
                 "project management",
             ],
         ),
-              
         (
             "Account Management",
             [
@@ -903,7 +929,6 @@ def classify_job(job):
                 "client success manager",
             ],
         ),
-        
         (
             "Operations & Admin",
             [
