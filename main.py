@@ -847,6 +847,126 @@ def save_review_job(supabase, job, decision, reason):
         .execute()
     )
 
+def flush_job_batches(
+    supabase,
+    published_jobs,
+    review_jobs,
+    batch_size=200,
+):
+    """
+    Write classified jobs to Supabase in batches.
+
+    Published jobs belong in public.jobs.
+    Review/rejected jobs belong in public.job_reviews.
+
+    Also removes stale records from the opposite table.
+    """
+
+    def chunks(items, size):
+        for i in range(0, len(items), size):
+            yield items[i:i + size]
+
+    print("\n================================")
+    print("WRITING DATABASE BATCHES")
+    print("================================")
+
+    # -----------------------------------------------------
+    # PUBLISHED JOBS
+    # -----------------------------------------------------
+
+    for batch in chunks(published_jobs, batch_size):
+        (
+            supabase.table("jobs")
+            .upsert(
+                batch,
+                on_conflict="source,source_job_id",
+            )
+            .execute()
+        )
+
+    # -----------------------------------------------------
+    # REVIEW / REJECTED JOBS
+    # -----------------------------------------------------
+
+    for batch in chunks(review_jobs, batch_size):
+        (
+            supabase.table("job_reviews")
+            .upsert(
+                batch,
+                on_conflict="source,source_job_id",
+            )
+            .execute()
+        )
+
+    # -----------------------------------------------------
+    # REMOVE STALE CROSS-TABLE RECORDS IN BATCHES
+    # -----------------------------------------------------
+
+    def batch_delete_opposite_table(
+        table_name,
+        records,
+        size,
+    ):
+        """
+        Delete stale records from the opposite table.
+
+        Records are grouped by source first so that a job ID
+        from one ATS can never accidentally match the same ID
+        from another ATS.
+        """
+
+        records_by_source = {}
+
+        for record in records:
+            source = record.get("source")
+            source_job_id = record.get("source_job_id")
+
+            if not source or not source_job_id:
+                continue
+
+            records_by_source.setdefault(
+                source,
+                [],
+            ).append(source_job_id)
+
+        for source, job_ids in records_by_source.items():
+
+            # Remove duplicate IDs before sending requests.
+            job_ids = list(dict.fromkeys(job_ids))
+
+            for id_batch in chunks(job_ids, size):
+                (
+                    supabase.table(table_name)
+                    .delete()
+                    .eq("source", source)
+                    .in_("source_job_id", id_batch)
+                    .execute()
+            )
+
+
+    # Published jobs must not remain in job_reviews.
+    batch_delete_opposite_table(
+        "job_reviews",
+        published_jobs,
+        batch_size,
+    )
+
+    # Review/rejected jobs must not remain published.
+    batch_delete_opposite_table(
+        "jobs",
+        review_jobs,
+        batch_size,
+    )
+
+    print(
+        f"Published batch records: "
+        f"{len(published_jobs)}"
+    )
+
+    print(
+        f"Review/rejected batch records: "
+        f"{len(review_jobs)}"
+    )
 
 def main():
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -854,10 +974,7 @@ def main():
             "SUPABASE_URL and SUPABASE_KEY must be configured."
         )
 
-    supabase = create_client(
-        SUPABASE_URL,
-        SUPABASE_KEY,
-    )
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     greenhouse_boards = load_greenhouse_boards()
     lever_boards = load_lever_boards()
@@ -869,163 +986,82 @@ def main():
     total_rejected = 0
     total_errors = 0
 
-    # =========================================================
-    # Shared job processor
-    # =========================================================
+    published_jobs = []
+    review_jobs = []
+
+    def queue_published_job(job, reason):
+        job["philippines_eligible"] = True
+        job["classification_reason"] = reason
+        job["category"] = classify_job(job)
+        published_jobs.append(job.copy())
+
+    def queue_review_job(job, decision, reason):
+        review_jobs.append({
+            "title": job.get("title"),
+            "company": job.get("company"),
+            "location": job.get("location"),
+            "source": job.get("source"),
+            "source_job_id": job.get("source_job_id"),
+            "job_url": job.get("job_url"),
+            "decision": decision,
+            "reason": reason,
+        })
 
     def process_job(job, raw_title="Unknown"):
-    nonlocal total_published
-    nonlocal total_review
-    nonlocal total_rejected
-    nonlocal total_errors
+        nonlocal total_published, total_review, total_rejected, total_errors
 
-    try:
-        # -------------------------------------------------
-        # 1. JOB RELEVANCE CHECK
-        # -------------------------------------------------
-        # Reject obviously irrelevant jobs before spending
-        # time deciding whether their geography is eligible.
-        #
-        # This prevents technical, senior leadership and
-        # enterprise-sales jobs with generic "Remote"
-        # locations from unnecessarily entering Review.
+        try:
+            relevance, relevance_reason = check_va_relevance(job)
 
-        relevance, relevance_reason = check_va_relevance(job)
-
-        if relevance == "irrelevant":
-            save_review_job(
-                supabase,
-                job,
-                "reject",
-                relevance_reason,
-            )
-
-            total_rejected += 1
-            return
-
-        # -------------------------------------------------
-        # 2. PHILIPPINES / GEOGRAPHY CHECK
-        # -------------------------------------------------
-
-        decision, reason = check_philippines_eligibility(job)
-
-        if decision == "reject":
-            save_review_job(
-                supabase,
-                job,
-                "reject",
-                reason,
-            )
-
-            total_rejected += 1
-            return
-
-        # -------------------------------------------------
-        # 3. GENUINELY AMBIGUOUS RELEVANCE
-        # -------------------------------------------------
-        # Only keep an ambiguous role in Review if its
-        # geography is at least potentially suitable.
-
-        if relevance == "review":
-            combined_reason = (
-                f"{relevance_reason}. "
-                f"Geography: {reason}"
-            )
-
-            save_review_job(
-                supabase,
-                job,
-                "review",
-                combined_reason,
-            )
-
-            total_review += 1
-            return
-
-        # -------------------------------------------------
-        # 4. AMBIGUOUS GEOGRAPHY
-        # -------------------------------------------------
-        # At this point the role itself is relevant, but we
-        # still don't have enough evidence that applicants
-        # from the Philippines are eligible.
-
-        if decision == "review":
-            save_review_job(
-                supabase,
-                job,
-                "review",
-                reason,
-            )
-
-            total_review += 1
-            return
-
-        # -------------------------------------------------
-        # 5. REMOTE STATUS CHECK
-        # -------------------------------------------------
-        # Geography and relevance have both passed.
-        #
-        # For now this additional remote validation applies
-        # only to Ashby. Greenhouse and Lever remote-status
-        # validation will be added separately.
-
-        if job.get("source") == "ashby":
-            remote_decision, remote_reason = (
-                check_remote_status(job)
-            )
-
-            if remote_decision == "onsite":
-                save_review_job(
-                    supabase,
-                    job,
-                    "reject",
-                    remote_reason,
-                )
-
+            if relevance == "irrelevant":
+                queue_review_job(job, "reject", relevance_reason)
                 total_rejected += 1
                 return
 
-            if remote_decision == "review":
-                save_review_job(
-                    supabase,
-                    job,
-                    "review",
-                    remote_reason,
-                )
+            decision, reason = check_philippines_eligibility(job)
 
+            if decision == "reject":
+                queue_review_job(job, "reject", reason)
+                total_rejected += 1
+                return
+
+            if relevance == "review":
+                combined_reason = (
+                    f"{relevance_reason}. Geography: {reason}"
+                )
+                queue_review_job(job, "review", combined_reason)
                 total_review += 1
                 return
 
-        # -------------------------------------------------
-        # 6. PUBLISH
-        # -------------------------------------------------
+            if decision == "review":
+                queue_review_job(job, "review", reason)
+                total_review += 1
+                return
 
-        save_published_job(
-            supabase,
-            job,
-            reason,
-        )
+            if job.get("source") == "ashby":
+                remote_decision, remote_reason = check_remote_status(job)
 
-        total_published += 1
+                if remote_decision == "onsite":
+                    queue_review_job(job, "reject", remote_reason)
+                    total_rejected += 1
+                    return
 
-        print(
-            f"  PUBLISHED: {job['title']} "
-            f"[{job['category']}] "
-            f"- {job['location']}"
-        )
+                if remote_decision == "review":
+                    queue_review_job(job, "review", remote_reason)
+                    total_review += 1
+                    return
 
-    except Exception as error:
-        total_errors += 1
+            queue_published_job(job, reason)
+            total_published += 1
 
-        print(
-            f"  JOB ERROR: "
-            f"{raw_title} "
-            f"- {error}"
-        )
+            print(
+                f"  PUBLISHED: {job['title']} "
+                f"[{job['category']}] - {job['location']}"
+            )
 
-    # =========================================================
-    # GREENHOUSE
-    # =========================================================
+        except Exception as error:
+            total_errors += 1
+            print(f"  JOB ERROR: {raw_title} - {error}")
 
     print("\n================================")
     print("GREENHOUSE")
@@ -1039,14 +1075,12 @@ def main():
 
         try:
             raw_jobs = fetch_greenhouse_jobs(board)
-
         except Exception as error:
             print(f"  SOURCE FAILED: {error}")
             total_errors += 1
             continue
 
         print(f"  Found {len(raw_jobs)} jobs.")
-
         total_fetched += len(raw_jobs)
 
         for raw_job in raw_jobs:
@@ -1056,24 +1090,13 @@ def main():
                     company=company,
                     board=board,
                 )
-
-                process_job(
-                    job,
-                    raw_job.get("title", "Unknown"),
-                )
-
+                process_job(job, raw_job.get("title", "Unknown"))
             except Exception as error:
                 total_errors += 1
-
                 print(
                     f"  JOB ERROR: "
-                    f"{raw_job.get('title', 'Unknown')} "
-                    f"- {error}"
+                    f"{raw_job.get('title', 'Unknown')} - {error}"
                 )
-
-    # =========================================================
-    # LEVER
-    # =========================================================
 
     print("\n================================")
     print("LEVER")
@@ -1087,14 +1110,12 @@ def main():
 
         try:
             raw_jobs = fetch_lever_jobs(slug)
-
         except Exception as error:
             print(f"  SOURCE FAILED: {error}")
             total_errors += 1
             continue
 
         print(f"  Found {len(raw_jobs)} jobs.")
-
         total_fetched += len(raw_jobs)
 
         for raw_job in raw_jobs:
@@ -1104,23 +1125,13 @@ def main():
                     company=company,
                     slug=slug,
                 )
-
-                process_job(
-                    job,
-                    raw_job.get("text", "Unknown"),
-                )
-
+                process_job(job, raw_job.get("text", "Unknown"))
             except Exception as error:
                 total_errors += 1
-
                 print(
                     f"  JOB ERROR: "
-                    f"{raw_job.get('text', 'Unknown')} "
-                    f"- {error}"
+                    f"{raw_job.get('text', 'Unknown')} - {error}"
                 )
-    # -------------------------
-    # ASHBY
-    # -------------------------
 
     print("\n==============================")
     print("ASHBY")
@@ -1134,36 +1145,28 @@ def main():
 
         try:
             raw_jobs = fetch_ashby_jobs(slug)
-
             print(f"Found {len(raw_jobs)} jobs")
-
             total_fetched += len(raw_jobs)
 
             for raw_job in raw_jobs:
-                job = normalize_ashby_job(
-                    raw_job,
-                    company,
-                    slug,
-                )
-
+                job = normalize_ashby_job(raw_job, company, slug)
                 process_job(
                     job,
-                    raw_title=raw_job.get(
-                        "title",
-                        "Unknown",
-                    ),
+                    raw_title=raw_job.get("title", "Unknown"),
                 )
 
         except Exception as exc:
             total_errors += 1
-
             print(
                 f"ERROR fetching Ashby board "
                 f"{company} ({slug}): {exc}"
             )
-    # =========================================================
-    # SUMMARY
-    # =========================================================
+
+    flush_job_batches(
+        supabase,
+        published_jobs,
+        review_jobs,
+    )
 
     print("\n================================")
     print("COLLECTION COMPLETE")
