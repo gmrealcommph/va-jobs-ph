@@ -1146,30 +1146,12 @@ def main():
                 total_rejected += 1
                 return
 
-            if relevance == "review":
-                combined_reason = (
-                    f"{relevance_reason}. Geography: {reason}"
-                )
-                queue_review_job(
-                    job,
-                    "review",
-                    combined_reason,
-                )
-                total_review += 1
-                return
-
-            if decision == "review":
-                queue_review_job(
-                    job,
-                    "review",
-                    reason,
-                )
-                total_review += 1
-                return
-
             # -------------------------------------------------
             # LEVER WORKPLACE TYPE
             # -------------------------------------------------
+            # A structured Hybrid/Onsite value is definitive,
+            # so reject it before sending ambiguous roles to
+            # manual Review.
 
             if job.get("source") == "lever":
                 workplace_type = (
@@ -1192,6 +1174,8 @@ def main():
             # -------------------------------------------------
             # ASHBY REMOTE STATUS
             # -------------------------------------------------
+            # Ashby remote evidence is also checked before
+            # ambiguous relevance/geography goes to Review.
 
             if job.get("source") == "ashby":
                 remote_decision, remote_reason = check_remote_status(job)
@@ -1213,6 +1197,31 @@ def main():
                     )
                     total_review += 1
                     return
+
+            # -------------------------------------------------
+            # AMBIGUOUS ROLE / GEOGRAPHY
+            # -------------------------------------------------
+
+            if relevance == "review":
+                combined_reason = (
+                    f"{relevance_reason}. Geography: {reason}"
+                )
+                queue_review_job(
+                    job,
+                    "review",
+                    combined_reason,
+                )
+                total_review += 1
+                return
+
+            if decision == "review":
+                queue_review_job(
+                    job,
+                    "review",
+                    reason,
+                )
+                total_review += 1
+                return
 
             # -------------------------------------------------
             # PUBLISH
