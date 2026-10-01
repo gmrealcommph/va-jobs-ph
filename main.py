@@ -9,7 +9,10 @@ from collectors.greenhouse import (
     normalize_greenhouse_job,
 )
 from collectors.lever import fetch_lever_jobs
-from collectors.ashby import fetch_ashby_jobs
+from collectors.ashby import (
+    fetch_ashby_jobs,
+    fetch_ashby_company_logo,
+)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -39,7 +42,12 @@ def load_ashby_boards():
     ) as file:
         return json.load(file)
 
-def normalize_ashby_job(raw_job, company, slug):
+def normalize_ashby_job(
+    raw_job,
+    company,
+    slug,
+    company_logo_url=None,
+):
     """
     Convert an Ashby job into the common structure used by
     our classifiers and Supabase jobs table.
@@ -64,18 +72,21 @@ def normalize_ashby_job(raw_job, company, slug):
     # and OnSite. Prefer this structured value when present.
     if workplace_type.lower() == "remote":
         remote = True
+
     elif workplace_type.lower() in {
         "hybrid",
         "onsite",
         "on-site",
     }:
         remote = False
+
     else:
         remote = raw_job.get("isRemote")
 
     return {
         "title": raw_job.get("title") or "",
         "company": company,
+        "company_logo_url": company_logo_url,
         "description": description,
         "category": None,
         "location": location,
@@ -84,7 +95,11 @@ def normalize_ashby_job(raw_job, company, slug):
         "philippines_eligible": False,
         "source": "ashby",
         "source_board": slug,
-        "source_job_id": str(job_id) if job_id else None,
+        "source_job_id": (
+            str(job_id)
+            if job_id
+            else None
+        ),
         "job_url": (
             raw_job.get("jobUrl")
             or raw_job.get("applyUrl")
@@ -93,7 +108,6 @@ def normalize_ashby_job(raw_job, company, slug):
         "status": "active",
         "classification_reason": None,
     }
-
 def normalize_lever_job(raw_job, company, slug):
     """
     Convert a Lever job into the same structure used by our
@@ -1247,7 +1261,10 @@ def main():
             "SUPABASE_URL and SUPABASE_KEY must be configured."
         )
 
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase = create_client(
+        SUPABASE_URL,
+        SUPABASE_KEY,
+    )
 
     greenhouse_boards = load_greenhouse_boards()
     lever_boards = load_lever_boards()
@@ -1271,21 +1288,33 @@ def main():
         job["classification_reason"] = reason
         job["category"] = classify_job(job)
         job["status"] = "active"
-        published_jobs.append(job.copy())
 
-    def queue_review_job(job, decision, reason):
+        published_jobs.append(
+            job.copy()
+        )
+
+    def queue_review_job(
+        job,
+        decision,
+        reason,
+    ):
         review_jobs.append({
             "title": job.get("title"),
             "company": job.get("company"),
             "location": job.get("location"),
             "source": job.get("source"),
-            "source_job_id": job.get("source_job_id"),
+            "source_job_id": job.get(
+                "source_job_id"
+            ),
             "job_url": job.get("job_url"),
             "decision": decision,
             "reason": reason,
         })
 
-    def process_job(job, raw_title="Unknown"):
+    def process_job(
+        job,
+        raw_title="Unknown",
+    ):
         nonlocal total_published
         nonlocal total_review
         nonlocal total_rejected
@@ -1302,6 +1331,7 @@ def main():
                     "reject",
                     vacancy_reason,
                 )
+
                 total_rejected += 1
                 return
 
@@ -1315,11 +1345,14 @@ def main():
                     "reject",
                     relevance_reason,
                 )
+
                 total_rejected += 1
                 return
 
             decision, reason = (
-                check_philippines_eligibility(job)
+                check_philippines_eligibility(
+                    job
+                )
             )
 
             if decision == "reject":
@@ -1328,6 +1361,7 @@ def main():
                     "reject",
                     reason,
                 )
+
                 total_rejected += 1
                 return
 
@@ -1337,7 +1371,10 @@ def main():
 
             if job.get("source") == "lever":
                 workplace_type = (
-                    job.get("workplace_type") or ""
+                    job.get(
+                        "workplace_type"
+                    )
+                    or ""
                 ).strip().lower()
 
                 if workplace_type in {
@@ -1353,20 +1390,22 @@ def main():
                             f"{workplace_type}"
                         ),
                     )
+
                     total_rejected += 1
                     return
 
             # ---------------------------------------------
-            # ASHBY REMOTE STATUS
+            # ASHBY / GREENHOUSE REMOTE STATUS
             # ---------------------------------------------
 
             if job.get("source") in {
                 "ashby",
                 "greenhouse",
             }:
-                remote_decision, remote_reason = (
-                    check_remote_status(job)
-                )
+                (
+                    remote_decision,
+                    remote_reason,
+                ) = check_remote_status(job)
 
                 if remote_decision == "onsite":
                     queue_review_job(
@@ -1374,6 +1413,7 @@ def main():
                         "reject",
                         remote_reason,
                     )
+
                     total_rejected += 1
                     return
 
@@ -1383,6 +1423,7 @@ def main():
                         "review",
                         remote_reason,
                     )
+
                     total_review += 1
                     return
 
@@ -1401,6 +1442,7 @@ def main():
                     "review",
                     combined_reason,
                 )
+
                 total_review += 1
                 return
 
@@ -1410,6 +1452,7 @@ def main():
                     "review",
                     reason,
                 )
+
                 total_review += 1
                 return
 
@@ -1417,46 +1460,71 @@ def main():
             # PUBLISH
             # ---------------------------------------------
 
-            queue_published_job(job, reason)
+            queue_published_job(
+                job,
+                reason,
+            )
+
             total_published += 1
 
             print(
-                f"  PUBLISHED: {job['title']} "
+                f"  PUBLISHED: "
+                f"{job['title']} "
                 f"[{job['category']}] - "
                 f"{job['location']}"
             )
 
         except Exception as error:
             total_errors += 1
+
             print(
                 f"  JOB ERROR: "
-                f"{raw_title} - {error}"
+                f"{raw_title} - "
+                f"{error}"
             )
 
     # =====================================================
     # GREENHOUSE
     # =====================================================
 
-    print("\n================================")
+    print(
+        "\n================================"
+    )
     print("GREENHOUSE")
-    print("================================")
+    print(
+        "================================"
+    )
 
     for board_config in greenhouse_boards:
         company = board_config["company"]
         board = board_config["board"]
 
         print(
-            f"\nChecking {company} ({board})..."
+            f"\nChecking "
+            f"{company} ({board})..."
         )
 
         try:
-            raw_jobs = fetch_greenhouse_jobs(board)
+            raw_jobs = (
+                fetch_greenhouse_jobs(
+                    board
+                )
+            )
+
         except Exception as error:
-            print(f"  SOURCE FAILED: {error}")
+            print(
+                f"  SOURCE FAILED: "
+                f"{error}"
+            )
+
             total_errors += 1
             continue
 
-        print(f"  Found {len(raw_jobs)} jobs.")
+        print(
+            f"  Found "
+            f"{len(raw_jobs)} jobs."
+        )
+
         total_fetched += len(raw_jobs)
 
         # Fetch succeeded, so this board can be reconciled.
@@ -1466,25 +1534,32 @@ def main():
             "job_ids": {
                 str(raw_job.get("id"))
                 for raw_job in raw_jobs
-                if raw_job.get("id") is not None
+                if raw_job.get("id")
+                is not None
             },
         })
 
         for raw_job in raw_jobs:
             try:
-                job = normalize_greenhouse_job(
-                    raw_job,
-                    company=company,
-                    board=board,
+                job = (
+                    normalize_greenhouse_job(
+                        raw_job,
+                        company=company,
+                        board=board,
+                    )
                 )
 
                 process_job(
                     job,
-                    raw_job.get("title", "Unknown"),
+                    raw_job.get(
+                        "title",
+                        "Unknown",
+                    ),
                 )
 
             except Exception as error:
                 total_errors += 1
+
                 print(
                     f"  JOB ERROR: "
                     f"{raw_job.get('title', 'Unknown')} "
@@ -1495,26 +1570,44 @@ def main():
     # LEVER
     # =====================================================
 
-    print("\n================================")
+    print(
+        "\n================================"
+    )
     print("LEVER")
-    print("================================")
+    print(
+        "================================"
+    )
 
     for board_config in lever_boards:
         company = board_config["name"]
         slug = board_config["slug"]
 
         print(
-            f"\nChecking {company} ({slug})..."
+            f"\nChecking "
+            f"{company} ({slug})..."
         )
 
         try:
-            raw_jobs = fetch_lever_jobs(slug)
+            raw_jobs = (
+                fetch_lever_jobs(
+                    slug
+                )
+            )
+
         except Exception as error:
-            print(f"  SOURCE FAILED: {error}")
+            print(
+                f"  SOURCE FAILED: "
+                f"{error}"
+            )
+
             total_errors += 1
             continue
 
-        print(f"  Found {len(raw_jobs)} jobs.")
+        print(
+            f"  Found "
+            f"{len(raw_jobs)} jobs."
+        )
+
         total_fetched += len(raw_jobs)
 
         successful_boards.append({
@@ -1523,25 +1616,32 @@ def main():
             "job_ids": {
                 str(raw_job.get("id"))
                 for raw_job in raw_jobs
-                if raw_job.get("id") is not None
+                if raw_job.get("id")
+                is not None
             },
         })
 
         for raw_job in raw_jobs:
             try:
-                job = normalize_lever_job(
-                    raw_job,
-                    company=company,
-                    slug=slug,
+                job = (
+                    normalize_lever_job(
+                        raw_job,
+                        company=company,
+                        slug=slug,
+                    )
                 )
 
                 process_job(
                     job,
-                    raw_job.get("text", "Unknown"),
+                    raw_job.get(
+                        "text",
+                        "Unknown",
+                    ),
                 )
 
             except Exception as error:
                 total_errors += 1
+
                 print(
                     f"  JOB ERROR: "
                     f"{raw_job.get('text', 'Unknown')} "
@@ -1552,9 +1652,13 @@ def main():
     # ASHBY
     # =====================================================
 
-    print("\n================================")
+    print(
+        "\n================================"
+    )
     print("ASHBY")
-    print("================================")
+    print(
+        "================================"
+    )
 
     for board in ashby_boards:
         slug = board["slug"]
@@ -1566,18 +1670,56 @@ def main():
         )
 
         try:
-            raw_jobs = fetch_ashby_jobs(slug)
+            raw_jobs = (
+                fetch_ashby_jobs(
+                    slug
+                )
+            )
 
         except Exception as error:
             total_errors += 1
+
             print(
                 f"ERROR fetching Ashby board "
-                f"{company} ({slug}): {error}"
+                f"{company} ({slug}): "
+                f"{error}"
             )
+
             continue
 
-        print(f"Found {len(raw_jobs)} jobs")
+        print(
+            f"Found "
+            f"{len(raw_jobs)} jobs"
+        )
+
         total_fetched += len(raw_jobs)
+
+        # ---------------------------------------------
+        # COMPANY LOGO
+        # ---------------------------------------------
+        #
+        # Look up branding once per Ashby company,
+        # not once for every individual job.
+        #
+        # A missing logo is completely valid and
+        # simply results in company_logo_url = None.
+
+        company_logo_url = (
+            fetch_ashby_company_logo(
+                slug
+            )
+        )
+
+        if company_logo_url:
+            print(
+                f"  LOGO FOUND: "
+                f"{company}"
+            )
+        else:
+            print(
+                f"  LOGO NOT FOUND: "
+                f"{company}"
+            )
 
         successful_boards.append({
             "source": "ashby",
@@ -1585,16 +1727,22 @@ def main():
             "job_ids": {
                 str(raw_job.get("id"))
                 for raw_job in raw_jobs
-                if raw_job.get("id") is not None
+                if raw_job.get("id")
+                is not None
             },
         })
 
         for raw_job in raw_jobs:
             try:
-                job = normalize_ashby_job(
-                    raw_job,
-                    company,
-                    slug,
+                job = (
+                    normalize_ashby_job(
+                        raw_job,
+                        company,
+                        slug,
+                        company_logo_url=(
+                            company_logo_url
+                        ),
+                    )
                 )
 
                 process_job(
@@ -1607,6 +1755,7 @@ def main():
 
             except Exception as error:
                 total_errors += 1
+
                 print(
                     f"  JOB ERROR: "
                     f"{raw_job.get('title', 'Unknown')} "
@@ -1626,28 +1775,55 @@ def main():
     # =====================================================
     # EXPIRED-JOB RECONCILIATION
     # =====================================================
+    #
     # Run this only AFTER current jobs have been written.
     # Current jobs therefore remain/revert to status=active.
 
-    total_expired = reconcile_expired_jobs(
-        supabase,
-        successful_boards,
+    total_expired = (
+        reconcile_expired_jobs(
+            supabase,
+            successful_boards,
+        )
     )
 
     # =====================================================
     # SUMMARY
     # =====================================================
 
-    print("\n================================")
+    print(
+        "\n================================"
+    )
     print("COLLECTION COMPLETE")
-    print("================================")
-    print(f"Fetched:   {total_fetched}")
-    print(f"Published: {total_published}")
-    print(f"Review:    {total_review}")
-    print(f"Rejected:  {total_rejected}")
-    print(f"Expired:   {total_expired}")
-    print(f"Errors:    {total_errors}")
-    print("================================")
+    print(
+        "================================"
+    )
+    print(
+        f"Fetched:   "
+        f"{total_fetched}"
+    )
+    print(
+        f"Published: "
+        f"{total_published}"
+    )
+    print(
+        f"Review:    "
+        f"{total_review}"
+    )
+    print(
+        f"Rejected:  "
+        f"{total_rejected}"
+    )
+    print(
+        f"Expired:   "
+        f"{total_expired}"
+    )
+    print(
+        f"Errors:    "
+        f"{total_errors}"
+    )
+    print(
+        "================================"
+    )
 
 
 if __name__ == "__main__":
