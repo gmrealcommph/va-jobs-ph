@@ -83,6 +83,7 @@ def normalize_ashby_job(raw_job, company, slug):
         "workplace_type": workplace_type or "unspecified",
         "philippines_eligible": False,
         "source": "ashby",
+        "source_board": slug,
         "source_job_id": str(job_id) if job_id else None,
         "job_url": (
             raw_job.get("jobUrl")
@@ -121,12 +122,18 @@ def normalize_lever_job(raw_job, company, slug):
         "category": None,
         "location": location,
         "remote": raw_job.get("workplaceType") == "remote",
-        "workplace_type": raw_job.get("workplaceType", "unspecified"),
+        "workplace_type": raw_job.get(
+            "workplaceType",
+            "unspecified",
+        ),
         "philippines_eligible": False,
         "source": "lever",
+        "source_board": slug,
         "source_job_id": str(job_id) if job_id else None,
-        "job_url": raw_job.get("hostedUrl")
-        or raw_job.get("applyUrl"),
+        "job_url": (
+            raw_job.get("hostedUrl")
+            or raw_job.get("applyUrl")
+        ),
         "posted_at": None,
         "status": "active",
         "classification_reason": None,
