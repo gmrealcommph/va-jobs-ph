@@ -65,7 +65,10 @@ def normalize_greenhouse_job(job, company, board):
     Convert a Greenhouse job into our standard database format.
     """
 
-    location = job.get("location", {}).get("name", "") or ""
+    location = (
+        job.get("location", {}).get("name", "")
+        or ""
+    )
 
     description = clean_greenhouse_description(
         job.get("content", "")
@@ -73,26 +76,45 @@ def normalize_greenhouse_job(job, company, board):
 
     location_lower = location.lower()
 
+    remote_location_terms = [
+        "remote",
+        "work from home",
+        "work-from-home",
+        "wfh",
+        "home based",
+        "home-based",
+        "worldwide",
+        "anywhere",
+        "global",
+    ]
+
     remote = any(
         term in location_lower
-        for term in [
-            "remote",
-            "worldwide",
-            "anywhere",
-            "global",
-        ]
+        for term in remote_location_terms
     )
 
     return {
-        "title": job.get("title"),
+        "title": job.get("title") or "",
         "company": company,
         "description": description,
+        "category": None,
         "location": location,
+        "remote": remote,
+        "workplace_type": (
+            "remote"
+            if remote
+            else "unspecified"
+        ),
+        "philippines_eligible": False,
         "source": "greenhouse",
         "source_board": board,
-        "source_job_id": str(job.get("id")),
+        "source_job_id": (
+            str(job.get("id"))
+            if job.get("id") is not None
+            else None
+        ),
         "job_url": job.get("absolute_url"),
         "posted_at": job.get("updated_at"),
         "status": "active",
-        "remote": remote,
+        "classification_reason": None,
     }
