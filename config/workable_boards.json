@@ -122,5 +122,17 @@
 {
   "slug": "rocketams",
   "name": "RocketAMS"
+},
+  {
+  "slug": "mod-careers",
+  "name": "MyOutDesk"
+},
+{
+  "slug": "hirehawk",
+  "name": "HireHawk"
+},
+{
+  "slug": "wecloneyou",
+  "name": "We Clone You"
 }
 ]
