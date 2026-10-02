@@ -1331,7 +1331,189 @@ def check_va_relevance(job):
         )
 
     # ---------------------------------------------------------
-    # 7. EVERYTHING ELSE
+    # 7. DESCRIPTION-BASED ROLE RESCUE
+    # ---------------------------------------------------------
+    # Title matching remains the primary signal. Only titles that
+    # have NOT already matched our target, technical, leadership,
+    # or specialized-sales rules reach this section.
+    #
+    # Rescue requires evidence across multiple responsibility
+    # groups. Repeating one generic phrase such as "customer
+    # support" is not enough to publish an otherwise unknown role.
+
+    description = clean_text(
+        job.get("description")
+    ).lower()
+
+    responsibility_groups = {
+        "admin": [
+            "calendar management",
+            "manage calendars",
+            "manage calendar",
+            "schedule meetings",
+            "scheduling meetings",
+            "coordinate meetings",
+            "meeting coordination",
+            "manage inbox",
+            "inbox management",
+            "email management",
+            "manage emails",
+            "administrative support",
+            "administrative tasks",
+            "travel arrangements",
+            "travel coordination",
+            "prepare reports",
+            "prepare documents",
+            "document preparation",
+        ],
+        "customer_support": [
+            "respond to customer inquiries",
+            "respond to customer enquiries",
+            "customer inquiries",
+            "customer enquiries",
+            "customer support",
+            "customer service",
+            "customer experience",
+            "resolve customer issues",
+            "customer complaints",
+            "support tickets",
+            "ticketing system",
+            "live chat",
+            "email support",
+            "chat support",
+        ],
+        "sales_lead_gen": [
+            "lead generation",
+            "prospecting",
+            "cold outreach",
+            "cold calling",
+            "appointment setting",
+            "book appointments",
+            "qualify leads",
+            "sales pipeline",
+            "crm management",
+            "update crm",
+            "manage crm",
+            "follow up with leads",
+            "sales outreach",
+        ],
+        "operations": [
+            "operational support",
+            "operations support",
+            "coordinate projects",
+            "project coordination",
+            "task coordination",
+            "process documentation",
+            "standard operating procedures",
+            "manage workflows",
+            "workflow management",
+            "data management",
+            "database management",
+            "record keeping",
+            "maintain records",
+        ],
+        "marketing_social": [
+            "social media management",
+            "manage social media",
+            "social media posts",
+            "schedule social media",
+            "content calendar",
+            "content scheduling",
+            "email campaigns",
+            "email marketing",
+            "marketing campaigns",
+            "marketing support",
+            "seo",
+            "keyword research",
+            "community engagement",
+        ],
+        "ecommerce": [
+            "shopify",
+            "amazon seller",
+            "product listings",
+            "product listing",
+            "e-commerce",
+            "ecommerce",
+            "order processing",
+            "order management",
+            "inventory management",
+            "customer orders",
+        ],
+        "finance_bookkeeping": [
+            "bookkeeping",
+            "accounts payable",
+            "accounts receivable",
+            "invoice processing",
+            "process invoices",
+            "bank reconciliation",
+            "reconcile accounts",
+            "payroll processing",
+            "financial records",
+            "expense tracking",
+        ],
+        "recruiting_hr": [
+            "candidate sourcing",
+            "source candidates",
+            "screen candidates",
+            "candidate screening",
+            "schedule interviews",
+            "interview scheduling",
+            "recruitment support",
+            "recruiting support",
+            "onboarding employees",
+            "employee onboarding",
+            "hr administration",
+        ],
+        "content_creative": [
+            "write blog",
+            "blog posts",
+            "copywriting",
+            "content writing",
+            "edit videos",
+            "video editing",
+            "graphic design",
+            "design graphics",
+            "create graphics",
+            "content creation",
+        ],
+    }
+
+    matched_groups = []
+
+    if description:
+        for group_name, phrases in responsibility_groups.items():
+            if any(
+                phrase in description
+                for phrase in phrases
+            ):
+                matched_groups.append(group_name)
+
+    # Three distinct responsibility groups is strong enough to
+    # rescue an otherwise-unrecognized title automatically.
+    if len(matched_groups) >= 3:
+        return (
+            "relevant",
+            (
+                "Description strongly matches target remote-work "
+                "responsibilities across multiple areas: "
+                + ", ".join(matched_groups[:5])
+            ),
+        )
+
+    # Two distinct groups is meaningful but still ambiguous.
+    # Send these to Review rather than publishing automatically.
+    if len(matched_groups) == 2:
+        return (
+            "review",
+            (
+                "Description suggests target remote-work "
+                "responsibilities but requires review: "
+                + ", ".join(matched_groups)
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # 8. EVERYTHING ELSE
     # ---------------------------------------------------------
 
     return (
