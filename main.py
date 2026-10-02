@@ -1884,7 +1884,286 @@ def classify_job(job):
     return "Other Remote"
 
 
+
+# ============================================================
+# JOB ENRICHMENT
+# ============================================================
+# This layer runs only for jobs that have already qualified for
+# publication. It does not participate in publish/review/reject
+# decisions. Unknown values remain None / [] rather than guessed.
+
+def enrich_job(job):
+    title = clean_text(job.get("title"))
+    description = clean_text(job.get("description"))
+    location = clean_text(job.get("location"))
+    combined = f"{title} {description}".lower()
+
+    enrichment = {
+        "employment_type": None,
+        "salary_min_usd": None,
+        "salary_max_usd": None,
+        "salary_period": None,
+        "schedule_region": None,
+        "experience_level": None,
+        "skills": [],
+    }
+
+    # --------------------------------------------------------
+    # 1. EMPLOYMENT TYPE
+    # --------------------------------------------------------
+    # Prefer explicit structured source values where collectors
+    # expose them. Fall back to clear wording in title/description.
+    structured_type = clean_text(
+        job.get("employment_type")
+        or job.get("employmentType")
+        or job.get("commitment")
+    ).lower()
+
+    employment_patterns = [
+        ("full_time", [
+            r"\bfull[- ]time\b",
+            r"\bfull time employment\b",
+        ]),
+        ("part_time", [
+            r"\bpart[- ]time\b",
+            r"\bpart time employment\b",
+        ]),
+        ("contract", [
+            r"\bcontract(?:or)?\b",
+            r"\bfixed[- ]term\b",
+        ]),
+        ("freelance", [
+            r"\bfreelance\b",
+            r"\bfreelancer\b",
+        ]),
+    ]
+
+    employment_text = f"{structured_type} {combined}".strip()
+    for value, patterns in employment_patterns:
+        if any(re.search(pattern, employment_text) for pattern in patterns):
+            enrichment["employment_type"] = value
+            break
+
+    # --------------------------------------------------------
+    # 2. USD SALARY
+    # --------------------------------------------------------
+    # Extract only compensation-like USD expressions. We do not
+    # convert PHP/GBP/EUR/etc. and we do not interpret bare numbers.
+    salary_text = description
+
+    salary_context = (
+        r"(?:salary|compensation|pay|rate|earnings|remuneration|"
+        r"base salary|base pay|starting salary)"
+    )
+    usd_amount = r"(?:USD\s*|\$\s*)(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d{3,6}(?:\.\d{1,2})?)"
+    period_pattern = (
+        r"(?:/|per\s+)?"
+        r"(hour|hr|hourly|month|monthly|year|yr|yearly|annual|annually)"
+    )
+
+    salary_patterns = [
+        # Compensation: USD 2,000 - 2,500 per month
+        rf"{salary_context}.{{0,40}}{usd_amount}\s*(?:-|–|—|to)\s*"
+        rf"(?:USD\s*|\$\s*)?(\d{{1,3}}(?:,\d{{3}})*(?:\.\d{{1,2}})?|\d{{3,6}}(?:\.\d{{1,2}})?)"
+        rf"\s*{period_pattern}",
+        # USD 2,000 - 2,500 per month (currency itself is strong context)
+        rf"{usd_amount}\s*(?:-|–|—|to)\s*"
+        rf"(?:USD\s*|\$\s*)?(\d{{1,3}}(?:,\d{{3}})*(?:\.\d{{1,2}})?|\d{{3,6}}(?:\.\d{{1,2}})?)"
+        rf"\s*{period_pattern}",
+    ]
+
+    def _amount(value):
+        try:
+            return int(round(float(value.replace(",", ""))))
+        except (TypeError, ValueError):
+            return None
+
+    def _normalise_period(value):
+        value = (value or "").lower()
+        if value in {"hour", "hr", "hourly"}:
+            return "hourly"
+        if value in {"month", "monthly"}:
+            return "monthly"
+        if value in {"year", "yr", "yearly", "annual", "annually"}:
+            return "yearly"
+        return None
+
+    for pattern in salary_patterns:
+        match = re.search(pattern, salary_text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        groups = match.groups()
+        # salary_context creates no capture; groups are min, max, period.
+        minimum = _amount(groups[0])
+        maximum = _amount(groups[1])
+        period = _normalise_period(groups[2])
+
+        if minimum is not None and maximum is not None and maximum >= minimum:
+            enrichment["salary_min_usd"] = minimum
+            enrichment["salary_max_usd"] = maximum
+            enrichment["salary_period"] = period
+            break
+
+    if enrichment["salary_min_usd"] is None:
+        # Single explicit USD compensation, e.g. "$2,000/month" or
+        # "salary: USD 2,000 per month". Require a period.
+        single_patterns = [
+            rf"{salary_context}.{{0,40}}{usd_amount}\s*{period_pattern}",
+            rf"{usd_amount}\s*{period_pattern}",
+        ]
+        for pattern in single_patterns:
+            match = re.search(pattern, salary_text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            groups = match.groups()
+            amount = _amount(groups[0])
+            period = _normalise_period(groups[1])
+            if amount is not None:
+                enrichment["salary_min_usd"] = amount
+                enrichment["salary_period"] = period
+                break
+
+    # --------------------------------------------------------
+    # 3. SCHEDULE REGION
+    # --------------------------------------------------------
+    # Record a schedule only when working-hour/time-zone language
+    # is explicit. Geography eligibility alone is not a schedule.
+    schedule_patterns = [
+        ("us", [
+            r"\b(?:us|u\.s\.|usa)\s+(?:business\s+)?hours\b",
+            r"\b(?:est|edt|cst|cdt|mst|mdt|pst|pdt)\s+(?:hours|schedule|shift)\b",
+            r"\b(?:eastern|central|mountain|pacific)\s+time\s+(?:hours|schedule|shift)\b",
+            r"\b(?:graveyard|night)\s+shift\b.{0,40}\bphilippines\b",
+        ]),
+        ("uk_europe", [
+            r"\b(?:uk|u\.k\.)\s+(?:business\s+)?hours\b",
+            r"\b(?:gmt|bst|cet|cest)\s+(?:hours|schedule|shift)\b",
+            r"\b(?:uk|european|europe)\s+(?:time|timezone|time zone|schedule|hours)\b",
+        ]),
+        ("australia", [
+            r"\baustralian?\s+(?:business\s+)?hours\b",
+            r"\b(?:aest|aedt|acst|awst)\s+(?:hours|schedule|shift)\b",
+            r"\baustralia\s+(?:time|timezone|time zone|schedule|hours)\b",
+        ]),
+        ("philippines", [
+            r"\bphilippine\s+(?:business\s+)?hours\b",
+            r"\bphilippines\s+(?:time|timezone|time zone|schedule|hours)\b",
+            r"\b(?:pht|philippine standard time)\b",
+            r"\bday\s*shift\b.{0,40}\bphilippines\b",
+        ]),
+        ("flexible", [
+            r"\bflexible\s+(?:working\s+)?hours\b",
+            r"\bflexible\s+schedule\b",
+            r"\bwork\s+(?:your\s+)?own\s+hours\b",
+            r"\basynchronous\b",
+            r"\basync[- ]first\b",
+        ]),
+    ]
+
+    for value, patterns in schedule_patterns:
+        if any(re.search(pattern, combined) for pattern in patterns):
+            enrichment["schedule_region"] = value
+            break
+
+    # --------------------------------------------------------
+    # 4. EXPERIENCE LEVEL
+    # --------------------------------------------------------
+    # Prefer explicit years-of-experience requirements. Otherwise
+    # use strong title/description seniority language only.
+    years_patterns = [
+        r"\b(?:minimum(?:\s+of)?|at least)\s+(\d{1,2})\+?\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
+        r"\b(\d{1,2})\+\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
+        r"\b(\d{1,2})\s*-\s*(\d{1,2})\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
+    ]
+
+    years_min = None
+    for pattern in years_patterns:
+        match = re.search(pattern, combined)
+        if match:
+            years_min = int(match.group(1))
+            break
+
+    if years_min is not None:
+        if years_min <= 1:
+            enrichment["experience_level"] = "entry"
+        elif years_min <= 3:
+            enrichment["experience_level"] = "mid"
+        elif years_min <= 5:
+            enrichment["experience_level"] = "experienced"
+        else:
+            enrichment["experience_level"] = "senior"
+    else:
+        title_lower = title.lower()
+        if re.search(r"\b(?:intern|internship|entry[- ]level|junior)\b", title_lower):
+            enrichment["experience_level"] = "entry"
+        elif re.search(r"\b(?:senior|sr\.?|lead)\b", title_lower):
+            enrichment["experience_level"] = "senior"
+
+    # --------------------------------------------------------
+    # 5. SKILLS
+    # --------------------------------------------------------
+    # Curated, high-signal skill/tool vocabulary. These are matched
+    # as explicit terms rather than inferred from the role title.
+    skill_patterns = [
+        ("Google Workspace", r"\bgoogle workspace\b|\bg suite\b"),
+        ("Microsoft Office", r"\bmicrosoft office\b|\bms office\b"),
+        ("Excel", r"\bexcel\b"),
+        ("Google Sheets", r"\bgoogle sheets\b"),
+        ("Slack", r"\bslack\b"),
+        ("Zoom", r"\bzoom\b"),
+        ("Notion", r"\bnotion\b"),
+        ("Asana", r"\basana\b"),
+        ("Trello", r"\btrello\b"),
+        ("Monday.com", r"\bmonday\.com\b"),
+        ("ClickUp", r"\bclickup\b"),
+        ("HubSpot", r"\bhubspot\b"),
+        ("Salesforce", r"\bsalesforce\b"),
+        ("GoHighLevel", r"\bgohighlevel\b|\bgo high level\b"),
+        ("Zendesk", r"\bzendesk\b"),
+        ("Intercom", r"\bintercom\b"),
+        ("Shopify", r"\bshopify\b"),
+        ("Amazon Seller Central", r"\bamazon seller central\b"),
+        ("QuickBooks", r"\bquickbooks\b"),
+        ("Xero", r"\bxero\b"),
+        ("Canva", r"\bcanva\b"),
+        ("Adobe Photoshop", r"\bphotoshop\b"),
+        ("Adobe Illustrator", r"\billustrator\b"),
+        ("Adobe Premiere Pro", r"\bpremiere pro\b"),
+        ("CapCut", r"\bcapcut\b"),
+        ("WordPress", r"\bwordpress\b"),
+        ("Mailchimp", r"\bmailchimp\b"),
+        ("Klaviyo", r"\bklaviyo\b"),
+        ("Google Ads", r"\bgoogle ads\b|\bgoogle adwords\b"),
+        ("Meta Ads", r"\bmeta ads\b|\bfacebook ads\b"),
+        ("SEO", r"\bseo\b|\bsearch engine optimization\b"),
+        ("CRM", r"\bcrm\b|\bcustomer relationship management\b"),
+        ("Bookkeeping", r"\bbookkeeping\b"),
+        ("Payroll", r"\bpayroll\b"),
+        ("Data Entry", r"\bdata entry\b"),
+        ("Lead Generation", r"\blead generation\b"),
+        ("Cold Calling", r"\bcold calling\b"),
+        ("Appointment Setting", r"\bappointment setting\b"),
+        ("Email Marketing", r"\bemail marketing\b"),
+        ("Social Media Management", r"\bsocial media management\b"),
+        ("Calendar Management", r"\bcalendar management\b|\bmanage calendars\b"),
+        ("Inbox Management", r"\binbox management\b|\bemail management\b"),
+        ("Customer Support", r"\bcustomer support\b|\bcustomer service\b"),
+        ("Project Management", r"\bproject management\b"),
+    ]
+
+    skills = []
+    for label, pattern in skill_patterns:
+        if re.search(pattern, combined, flags=re.IGNORECASE):
+            skills.append(label)
+
+    enrichment["skills"] = skills[:20]
+
+    job.update(enrichment)
+    return job
+
 def save_published_job(supabase, job, reason):
+    job = enrich_job(job)
     job["philippines_eligible"] = True
     job["classification_reason"] = reason
     job["category"] = classify_job(job)
