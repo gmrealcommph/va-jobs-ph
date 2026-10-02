@@ -603,7 +603,37 @@ def check_remote_status(job):
         )
 
     # ---------------------------------------------------------
-    # 3. LOCATION EXPLICITLY INDICATES REMOTE WORK
+    # 3. TITLE EXPLICITLY INDICATES REMOTE WORK
+    # ---------------------------------------------------------
+    # Structured workplace_type above has priority, so wording in
+    # a title can never override an explicit Hybrid/OnSite value.
+
+    title = clean_text(
+        job.get("title")
+    ).lower()
+
+    remote_title_patterns = [
+        r"\bfully remote\b",
+        r"\b100% remote\b",
+        r"\bremote position\b",
+        r"\bremote role\b",
+        r"\bremote job\b",
+        r"\(\s*remote\s*\)",
+        r"(?:^|[-–—,|:/])\s*remote\b",
+        r"\bremote\s*(?:[-–—,|:/]|$)",
+    ]
+
+    if any(
+        re.search(pattern, title)
+        for pattern in remote_title_patterns
+    ):
+        return (
+            "remote",
+            "Job title explicitly indicates remote work",
+        )
+
+    # ---------------------------------------------------------
+    # 4. LOCATION EXPLICITLY INDICATES REMOTE WORK
     # ---------------------------------------------------------
 
     remote_location_terms = [
@@ -625,7 +655,7 @@ def check_remote_status(job):
         )
 
     # ---------------------------------------------------------
-    # 4. DESCRIPTION EXPLICITLY CONFIRMS REMOTE WORK
+    # 5. DESCRIPTION EXPLICITLY CONFIRMS REMOTE WORK
     # ---------------------------------------------------------
 
     explicit_remote_phrases = [
@@ -661,7 +691,7 @@ def check_remote_status(job):
         )
 
     # ---------------------------------------------------------
-    # 5. EXPLICIT NON-REMOTE FLAG
+    # 6. EXPLICIT NON-REMOTE FLAG
     # ---------------------------------------------------------
     #
     # Ashby exposes a meaningful structured remote flag.
@@ -676,7 +706,7 @@ def check_remote_status(job):
         )
 
     # ---------------------------------------------------------
-    # 6. REMOTE STATUS UNKNOWN
+    # 7. REMOTE STATUS UNKNOWN
     # ---------------------------------------------------------
 
     return (
@@ -770,6 +800,32 @@ def check_philippines_eligibility(job):
         )
 
     # ---------------------------------------------------------
+    # STRUCTURED LOCATION PRECEDENCE
+    # ---------------------------------------------------------
+    # Description-based geography rescue is intended for ambiguous
+    # ATS locations (blank, Remote, etc.). A concrete non-PH ATS
+    # country/region must not be overridden by generic wording such
+    # as "global company" or "worldwide team" in the description.
+
+    generic_remote = [
+        "remote",
+        "fully remote",
+        "remote - remote",
+    ]
+
+    ambiguous_location = (
+        not location
+        or location in generic_remote
+        or location in {
+            "work from home",
+            "work-from-home",
+            "wfh",
+            "home based",
+            "home-based",
+        }
+    )
+
+    # ---------------------------------------------------------
     # DESCRIPTION: EXPLICIT RESTRICTIONS
     # ---------------------------------------------------------
     # These patterns are deliberately conservative. They target
@@ -846,7 +902,7 @@ def check_philippines_eligibility(job):
         r"(?:remote\s*[-,/]\s*)?(?:the\s+)?philippines\b",
     ]
 
-    if description and any(
+    if ambiguous_location and description and any(
         re.search(pattern, description)
         for pattern in ph_context_patterns
     ):
@@ -876,7 +932,7 @@ def check_philippines_eligibility(job):
         rf"(?:remote\s*[-,/]\s*)?{asia_region}\b",
     ]
 
-    if description and any(
+    if ambiguous_location and description and any(
         re.search(pattern, description)
         for pattern in apac_context_patterns
     ):
@@ -902,7 +958,7 @@ def check_philippines_eligibility(job):
         r"(?:worldwide|global|anywhere)\b",
     ]
 
-    if description and any(
+    if ambiguous_location and description and any(
         re.search(pattern, description)
         for pattern in worldwide_context_patterns
     ):
@@ -910,12 +966,6 @@ def check_philippines_eligibility(job):
             "publish",
             "Job description explicitly allows worldwide applicants",
         )
-
-    generic_remote = [
-        "remote",
-        "fully remote",
-        "remote - remote",
-    ]
 
     if location in generic_remote or not location:
         return (
@@ -1184,6 +1234,9 @@ def check_va_relevance(job):
         "admin assistant",
         "administrative coordinator",
         "admin coordinator",
+        "sales administrator",
+        "sourcing admin",
+        "recruitment and sourcing admin",
         "office coordinator",
         "office assistant",
         "remote assistant",
@@ -1197,6 +1250,11 @@ def check_va_relevance(job):
         "support representative",
         "support agent",
         "customer service representative",
+        "onboarding associate",
+        "onboarding specialist",
+        "onboarding expert",
+        "onboarding coordinator",
+        "onboarding documents associate",
 
         # Customer success
         "customer success",
@@ -1234,6 +1292,9 @@ def check_va_relevance(job):
         "marketing manager",
         "digital marketing",
         "email marketing",
+        "lifecycle marketer",
+        "media buyer",
+        "ppc manager",
         "seo specialist",
         "seo assistant",
 
@@ -1257,10 +1318,12 @@ def check_va_relevance(job):
         "accounts payable",
         "accounts receivable",
         "billing specialist",
+        "billing representative",
         "payroll specialist",
 
         # Recruitment / HR
         "recruiter",
+        "staffing specialist",
         "recruitment coordinator",
         "talent acquisition coordinator",
         "hr assistant",
@@ -1557,6 +1620,12 @@ def classify_job(job):
                 "customer service",
                 "support specialist",
                 "support representative",
+                "billing representative",
+                "onboarding associate",
+                "onboarding specialist",
+                "onboarding expert",
+                "onboarding coordinator",
+                "onboarding documents associate",
                 "customer success",
                 "customer experience",
             ],
@@ -1588,6 +1657,9 @@ def classify_job(job):
             [
                 "marketing",
                 "growth marketing",
+                "lifecycle marketer",
+                "media buyer",
+                "ppc manager",
                 "seo",
                 "email marketer",
             ],
@@ -1618,6 +1690,8 @@ def classify_job(job):
             [
                 "recruiter",
                 "recruitment",
+                "staffing specialist",
+                "sourcing admin",
                 "talent acquisition",
                 "human resources",
                 "hr specialist",
@@ -1675,6 +1749,7 @@ def classify_job(job):
                 "operations coordinator",
                 "project coordinator",
                 "administrative",
+                "sales administrator",
             ],
         ),
     ]
