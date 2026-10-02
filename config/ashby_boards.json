@@ -56,5 +56,29 @@
   "slug": "moxie",
   "name": "Moxie"
 }
-  
+,
+{
+  "slug": "maneuver-marketing",
+  "name": "Maneuver Marketing"
+},
+{
+  "slug": "haast",
+  "name": "Haast"
+},
+{
+  "slug": "clipboard",
+  "name": "Clipboard"
+},
+{
+  "slug": "assembledhq",
+  "name": "Assembled"
+},
+{
+  "slug": "paddle",
+  "name": "Paddle"
+},
+{
+  "slug": "Playbook",
+  "name": "Playbook"
+}  
 ]
