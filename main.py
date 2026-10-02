@@ -1654,6 +1654,58 @@ def main():
     published_jobs = []
     review_jobs = []
 
+    # Diagnostic tracking only. These counters do not affect
+    # classification, publishing, or database behavior.
+    rejection_breakdown = {}
+    review_breakdown = {}
+    source_performance = {}
+    rejection_samples = {}
+
+    def get_source_key(job):
+        company = job.get("company") or "Unknown"
+        source = job.get("source") or "unknown"
+        board = job.get("source_board") or "unknown"
+        return f"{company} [{source}/{board}]"
+
+    def ensure_source_stats(job):
+        key = get_source_key(job)
+
+        if key not in source_performance:
+            source_performance[key] = {
+                "processed": 0,
+                "published": 0,
+                "review": 0,
+                "rejected": 0,
+                "errors": 0,
+            }
+
+        return source_performance[key]
+
+    def record_rejection(job, reason):
+        rejection_breakdown[reason] = (
+            rejection_breakdown.get(reason, 0) + 1
+        )
+
+        stats = ensure_source_stats(job)
+        stats["rejected"] += 1
+
+        samples = rejection_samples.setdefault(reason, [])
+
+        if len(samples) < 5:
+            samples.append({
+                "title": job.get("title") or "Unknown",
+                "company": job.get("company") or "Unknown",
+                "location": job.get("location") or "Unknown",
+            })
+
+    def record_review(job, reason):
+        review_breakdown[reason] = (
+            review_breakdown.get(reason, 0) + 1
+        )
+
+        stats = ensure_source_stats(job)
+        stats["review"] += 1
+
     # Contains only boards whose ATS fetch completed successfully.
     # These are the only boards eligible for lifecycle cleanup.
     successful_boards = []
@@ -1696,6 +1748,9 @@ def main():
         nonlocal total_errors
 
         try:
+            stats = ensure_source_stats(job)
+            stats["processed"] += 1
+
             vacancy_decision, vacancy_reason = (
                 check_active_vacancy(job)
             )
@@ -1704,6 +1759,11 @@ def main():
                 queue_review_job(
                     job,
                     "reject",
+                    vacancy_reason,
+                )
+
+                record_rejection(
+                    job,
                     vacancy_reason,
                 )
 
@@ -1721,6 +1781,11 @@ def main():
                     relevance_reason,
                 )
 
+                record_rejection(
+                    job,
+                    relevance_reason,
+                )
+
                 total_rejected += 1
                 return
 
@@ -1734,6 +1799,11 @@ def main():
                 queue_review_job(
                     job,
                     "reject",
+                    reason,
+                )
+
+                record_rejection(
+                    job,
                     reason,
                 )
 
@@ -1757,13 +1827,20 @@ def main():
                     "on-site",
                     "onsite",
                 }:
+                    lever_reason = (
+                        "Lever workplace type is "
+                        f"{workplace_type}"
+                    )
+
                     queue_review_job(
                         job,
                         "reject",
-                        (
-                            "Lever workplace type is "
-                            f"{workplace_type}"
-                        ),
+                        lever_reason,
+                    )
+
+                    record_rejection(
+                        job,
+                        lever_reason,
                     )
 
                     total_rejected += 1
@@ -1789,6 +1866,11 @@ def main():
                         remote_reason,
                     )
 
+                    record_rejection(
+                        job,
+                        remote_reason,
+                    )
+
                     total_rejected += 1
                     return
 
@@ -1796,6 +1878,11 @@ def main():
                     queue_review_job(
                         job,
                         "review",
+                        remote_reason,
+                    )
+
+                    record_review(
+                        job,
                         remote_reason,
                     )
 
@@ -1818,6 +1905,11 @@ def main():
                     combined_reason,
                 )
 
+                record_review(
+                    job,
+                    combined_reason,
+                )
+
                 total_review += 1
                 return
 
@@ -1825,6 +1917,11 @@ def main():
                 queue_review_job(
                     job,
                     "review",
+                    reason,
+                )
+
+                record_review(
+                    job,
                     reason,
                 )
 
@@ -1839,6 +1936,9 @@ def main():
                 job,
                 reason,
             )
+
+            stats = ensure_source_stats(job)
+            stats["published"] += 1
 
             total_published += 1
 
@@ -2273,6 +2373,93 @@ def main():
     print(
         "================================"
     )
+
+    # =====================================================
+    # REJECTION BREAKDOWN
+    # =====================================================
+
+    print("\n================================")
+    print("REJECTION BREAKDOWN")
+    print("================================")
+
+    for reason, count in sorted(
+        rejection_breakdown.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    ):
+        print(f"{count:5}  {reason}")
+
+    print("--------------------------------")
+    print(f"Total: {sum(rejection_breakdown.values())}")
+
+    # =====================================================
+    # REVIEW BREAKDOWN
+    # =====================================================
+
+    print("\n================================")
+    print("REVIEW BREAKDOWN")
+    print("================================")
+
+    for reason, count in sorted(
+        review_breakdown.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    ):
+        print(f"{count:5}  {reason}")
+
+    print("--------------------------------")
+    print(f"Total: {sum(review_breakdown.values())}")
+
+    # =====================================================
+    # SOURCE PERFORMANCE
+    # =====================================================
+
+    print("\n================================")
+    print("SOURCE PERFORMANCE")
+    print("================================")
+
+    sorted_sources = sorted(
+        source_performance.items(),
+        key=lambda item: item[1]["published"],
+        reverse=True,
+    )
+
+    for source_name, stats in sorted_sources:
+        print(f"\n{source_name}")
+        print(
+            f"  Processed: {stats['processed']} | "
+            f"Published: {stats['published']} | "
+            f"Review: {stats['review']} | "
+            f"Rejected: {stats['rejected']}"
+        )
+
+    # =====================================================
+    # SAMPLE REJECTIONS
+    # =====================================================
+
+    print("\n================================")
+    print("SAMPLE REJECTIONS")
+    print("================================")
+
+    for reason, samples in sorted(
+        rejection_samples.items(),
+        key=lambda item: rejection_breakdown.get(
+            item[0],
+            0,
+        ),
+        reverse=True,
+    ):
+        print(
+            f"\n{reason} "
+            f"({rejection_breakdown.get(reason, 0)})"
+        )
+
+        for sample in samples:
+            print(
+                f"  - {sample['title']} | "
+                f"{sample['company']} | "
+                f"{sample['location']}"
+            )
 
 
 if __name__ == "__main__":
