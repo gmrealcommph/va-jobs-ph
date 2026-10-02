@@ -1911,66 +1911,66 @@ def enrich_job(job):
     # --------------------------------------------------------
     # 1. EMPLOYMENT TYPE
     # --------------------------------------------------------
-    # Prefer explicit structured source values where collectors
-    # expose them. Fall back to clear wording in title/description.
+    # Structured ATS/source metadata wins when present. This avoids
+    # description wording such as "full-time contractor" overriding a
+    # source that explicitly classifies the engagement as Contractor.
     structured_type = clean_text(
         job.get("employment_type")
         or job.get("employmentType")
         or job.get("commitment")
     ).lower()
 
-    employment_patterns = [
-        ("full_time", [
-            r"\bfull[- ]time\b",
-            r"\bfull time employment\b",
-        ]),
-        ("part_time", [
-            r"\bpart[- ]time\b",
-            r"\bpart time employment\b",
-        ]),
-        ("contract", [
-            r"\bcontract(?:or)?\b",
-            r"\bfixed[- ]term\b",
-        ]),
-        ("freelance", [
-            r"\bfreelance\b",
-            r"\bfreelancer\b",
-        ]),
+    structured_employment_patterns = [
+        ("part_time", [r"\bpart[- ]time\b", r"\bpart_time\b"]),
+        ("full_time", [r"\bfull[- ]time\b", r"\bfull_time\b"]),
+        ("freelance", [r"\bfreelance(?:r)?\b"]),
+        ("contract", [r"\bcontract(?:or)?\b", r"\bfixed[- ]term\b"]),
     ]
 
-    employment_text = f"{structured_type} {combined}".strip()
-    for value, patterns in employment_patterns:
-        if any(re.search(pattern, employment_text) for pattern in patterns):
-            enrichment["employment_type"] = value
-            break
+    if structured_type:
+        for value, patterns in structured_employment_patterns:
+            if any(re.search(pattern, structured_type) for pattern in patterns):
+                enrichment["employment_type"] = value
+                break
+
+    # If no structured type exists, prefer explicit workload wording
+    # (full-time/part-time), then engagement wording (contract/freelance).
+    if enrichment["employment_type"] is None:
+        fallback_employment_patterns = [
+            ("part_time", [r"\bpart[- ]time\b", r"\bpart time employment\b"]),
+            ("full_time", [r"\bfull[- ]time\b", r"\bfull time employment\b"]),
+            ("freelance", [r"\bfreelance(?:r)?\b"]),
+            ("contract", [r"\bindependent contractor\b", r"\bcontract role\b", r"\bfixed[- ]term\b"]),
+        ]
+        for value, patterns in fallback_employment_patterns:
+            if any(re.search(pattern, combined) for pattern in patterns):
+                enrichment["employment_type"] = value
+                break
 
     # --------------------------------------------------------
     # 2. USD SALARY
     # --------------------------------------------------------
-    # Extract only compensation-like USD expressions. We do not
-    # convert PHP/GBP/EUR/etc. and we do not interpret bare numbers.
+    # Only explicit USD compensation is extracted. Candidate matches are
+    # rejected when their nearby context identifies an allowance, stipend,
+    # reimbursement, bonus, commission, equipment/internet/phone benefit,
+    # or similar non-base-pay amount.
     salary_text = description
-
     salary_context = (
-        r"(?:salary|compensation|pay|rate|earnings|remuneration|"
-        r"base salary|base pay|starting salary)"
+        r"(?:base salary|base pay|starting salary|salary|compensation|"
+        r"pay rate|hourly rate|monthly rate|annual rate|remuneration|earnings)"
     )
     usd_amount = r"(?:USD\s*|\$\s*)(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d{3,6}(?:\.\d{1,2})?)"
+    plain_amount = r"(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d{3,6}(?:\.\d{1,2})?)"
     period_pattern = (
         r"(?:/|per\s+)?"
         r"(hour|hr|hourly|month|monthly|year|yr|yearly|annual|annually)"
     )
-
-    salary_patterns = [
-        # Compensation: USD 2,000 - 2,500 per month
-        rf"{salary_context}.{{0,40}}{usd_amount}\s*(?:-|–|—|to)\s*"
-        rf"(?:USD\s*|\$\s*)?(\d{{1,3}}(?:,\d{{3}})*(?:\.\d{{1,2}})?|\d{{3,6}}(?:\.\d{{1,2}})?)"
-        rf"\s*{period_pattern}",
-        # USD 2,000 - 2,500 per month (currency itself is strong context)
-        rf"{usd_amount}\s*(?:-|–|—|to)\s*"
-        rf"(?:USD\s*|\$\s*)?(\d{{1,3}}(?:,\d{{3}})*(?:\.\d{{1,2}})?|\d{{3,6}}(?:\.\d{{1,2}})?)"
-        rf"\s*{period_pattern}",
-    ]
+    non_salary_terms = re.compile(
+        r"\b(?:allowance|stipend|reimburse(?:ment|d)?|bonus|commission|incentive|"
+        r"internet|wifi|wi-fi|phone|mobile|equipment|laptop|meal|transport|travel|"
+        r"wellness|health|medical|benefit|sign[- ]on|signing)\b",
+        flags=re.IGNORECASE,
+    )
 
     def _amount(value):
         try:
@@ -1988,66 +1988,85 @@ def enrich_job(job):
             return "yearly"
         return None
 
+    def _has_non_salary_context(match):
+        # Look mainly before the amount, where labels such as "internet
+        # allowance" normally occur, plus a short tail after it.
+        before = salary_text[max(0, match.start() - 55):match.start()]
+        after = salary_text[match.end():min(len(salary_text), match.end() + 30)]
+        nearby = f"{before} {after}"
+        return bool(non_salary_terms.search(nearby))
+
+    salary_patterns = [
+        rf"{salary_context}.{{0,35}}{usd_amount}\s*(?:-|–|—|to)\s*"
+        rf"(?:USD\s*|\$\s*)?{plain_amount}\s*{period_pattern}",
+        rf"{usd_amount}\s*(?:-|–|—|to)\s*"
+        rf"(?:USD\s*|\$\s*)?{plain_amount}\s*{period_pattern}",
+    ]
+
     for pattern in salary_patterns:
-        match = re.search(pattern, salary_text, flags=re.IGNORECASE)
-        if not match:
-            continue
-
-        groups = match.groups()
-        # salary_context creates no capture; groups are min, max, period.
-        minimum = _amount(groups[0])
-        maximum = _amount(groups[1])
-        period = _normalise_period(groups[2])
-
-        if minimum is not None and maximum is not None and maximum >= minimum:
-            enrichment["salary_min_usd"] = minimum
-            enrichment["salary_max_usd"] = maximum
-            enrichment["salary_period"] = period
+        for match in re.finditer(pattern, salary_text, flags=re.IGNORECASE):
+            if _has_non_salary_context(match):
+                continue
+            groups = match.groups()
+            minimum = _amount(groups[0])
+            maximum = _amount(groups[1])
+            period = _normalise_period(groups[2])
+            if minimum is not None and maximum is not None and maximum >= minimum:
+                enrichment["salary_min_usd"] = minimum
+                enrichment["salary_max_usd"] = maximum
+                enrichment["salary_period"] = period
+                break
+        if enrichment["salary_min_usd"] is not None:
             break
 
     if enrichment["salary_min_usd"] is None:
-        # Single explicit USD compensation, e.g. "$2,000/month" or
-        # "salary: USD 2,000 per month". Require a period.
         single_patterns = [
-            rf"{salary_context}.{{0,40}}{usd_amount}\s*{period_pattern}",
+            rf"{salary_context}.{{0,35}}{usd_amount}\s*{period_pattern}",
             rf"{usd_amount}\s*{period_pattern}",
         ]
         for pattern in single_patterns:
-            match = re.search(pattern, salary_text, flags=re.IGNORECASE)
-            if not match:
-                continue
-            groups = match.groups()
-            amount = _amount(groups[0])
-            period = _normalise_period(groups[1])
-            if amount is not None:
-                enrichment["salary_min_usd"] = amount
-                enrichment["salary_period"] = period
+            for match in re.finditer(pattern, salary_text, flags=re.IGNORECASE):
+                if _has_non_salary_context(match):
+                    continue
+                groups = match.groups()
+                amount = _amount(groups[0])
+                period = _normalise_period(groups[1])
+                if amount is not None:
+                    enrichment["salary_min_usd"] = amount
+                    enrichment["salary_period"] = period
+                    break
+            if enrichment["salary_min_usd"] is not None:
                 break
 
     # --------------------------------------------------------
     # 3. SCHEDULE REGION
     # --------------------------------------------------------
-    # Record a schedule only when working-hour/time-zone language
-    # is explicit. Geography eligibility alone is not a schedule.
+    # Require schedule/time-zone/work-hours context. A bare geographic
+    # mention (for example "US customers") must not become a schedule.
     schedule_patterns = [
         ("us", [
-            r"\b(?:us|u\.s\.|usa)\s+(?:business\s+)?hours\b",
-            r"\b(?:est|edt|cst|cdt|mst|mdt|pst|pdt)\s+(?:hours|schedule|shift)\b",
-            r"\b(?:eastern|central|mountain|pacific)\s+time\s+(?:hours|schedule|shift)\b",
+            r"\b(?:us|u\.s\.|usa)\s+(?:business\s+|working\s+|work\s+)?hours\b",
+            r"\b(?:schedule|shift|hours|working hours|work hours|time[- ]?zone|timezone)\s*[:\-]?\s*(?:est|edt|et|cst|cdt|ct|mst|mdt|mt|pst|pdt|pt)\b",
+            r"\b(?:est|edt|cst|cdt|mst|mdt|pst|pdt)\s+(?:time|hours|schedule|shift|timezone|time zone)\b",
+            r"\b(?:eastern|central|mountain|pacific)\s+(?:standard\s+|daylight\s+)?time\b.{0,30}\b(?:hours|schedule|shift|work|working|required|overlap)\b",
+            r"\b(?:work|working|required|overlap|availability).{0,35}\b(?:eastern|central|mountain|pacific)\s+(?:standard\s+|daylight\s+)?time\b",
             r"\b(?:graveyard|night)\s+shift\b.{0,40}\bphilippines\b",
         ]),
         ("uk_europe", [
-            r"\b(?:uk|u\.k\.)\s+(?:business\s+)?hours\b",
-            r"\b(?:gmt|bst|cet|cest)\s+(?:hours|schedule|shift)\b",
+            r"\b(?:uk|u\.k\.|london)\s+(?:business\s+|working\s+|work\s+)?hours\b",
+            r"\b(?:schedule|shift|hours|working hours|work hours|time[- ]?zone|timezone)\s*[:\-]?\s*(?:gmt|bst|cet|cest)\b",
+            r"\b(?:gmt|bst|cet|cest)\s+(?:time|hours|schedule|shift|timezone|time zone)\b",
             r"\b(?:uk|european|europe)\s+(?:time|timezone|time zone|schedule|hours)\b",
         ]),
         ("australia", [
-            r"\baustralian?\s+(?:business\s+)?hours\b",
-            r"\b(?:aest|aedt|acst|awst)\s+(?:hours|schedule|shift)\b",
+            r"\baustralian?\s+(?:business\s+|working\s+|work\s+)?hours\b",
+            r"\b(?:schedule|shift|hours|working hours|work hours|time[- ]?zone|timezone)\s*[:\-]?\s*(?:aest|aedt|acst|acdt|awst)\b",
+            r"\b(?:aest|aedt|acst|acdt|awst)\s+(?:time|hours|schedule|shift|timezone|time zone)\b",
+            r"\b(?:work|working|required|overlap|availability).{0,35}\b(?:aest|aedt|acst|acdt|awst)\b",
             r"\baustralia\s+(?:time|timezone|time zone|schedule|hours)\b",
         ]),
         ("philippines", [
-            r"\bphilippine\s+(?:business\s+)?hours\b",
+            r"\bphilippine\s+(?:business\s+|working\s+|work\s+)?hours\b",
             r"\bphilippines\s+(?:time|timezone|time zone|schedule|hours)\b",
             r"\b(?:pht|philippine standard time)\b",
             r"\bday\s*shift\b.{0,40}\bphilippines\b",
@@ -2069,19 +2088,29 @@ def enrich_job(job):
     # --------------------------------------------------------
     # 4. EXPERIENCE LEVEL
     # --------------------------------------------------------
-    # Prefer explicit years-of-experience requirements. Otherwise
-    # use strong title/description seniority language only.
+    # Explicit required years are strongest. Skip matches that appear in
+    # salary/pay-band descriptions. Generic "lead" is deliberately NOT a
+    # seniority signal because titles such as "Lead Generation VA" are common.
     years_patterns = [
-        r"\b(?:minimum(?:\s+of)?|at least)\s+(\d{1,2})\+?\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
+        r"\b(?:minimum(?:\s+of)?|at least|required(?:\s+minimum)?(?:\s+of)?)\s+(\d{1,2})\+?\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
         r"\b(\d{1,2})\+\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
-        r"\b(\d{1,2})\s*-\s*(\d{1,2})\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
+        r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\s+years?(?:\s+of)?\s+(?:relevant\s+)?experience\b",
     ]
+    band_terms = re.compile(
+        r"\b(?:salary|compensation|pay|rate)\s+(?:band|range|tier|level)|"
+        r"\b(?:entry|intermediate|expert)\s*(?:band|tier|level)\b",
+        flags=re.IGNORECASE,
+    )
 
     years_min = None
     for pattern in years_patterns:
-        match = re.search(pattern, combined)
-        if match:
+        for match in re.finditer(pattern, combined, flags=re.IGNORECASE):
+            nearby = combined[max(0, match.start() - 90):min(len(combined), match.end() + 30)]
+            if band_terms.search(nearby):
+                continue
             years_min = int(match.group(1))
+            break
+        if years_min is not None:
             break
 
     if years_min is not None:
@@ -2097,7 +2126,7 @@ def enrich_job(job):
         title_lower = title.lower()
         if re.search(r"\b(?:intern|internship|entry[- ]level|junior)\b", title_lower):
             enrichment["experience_level"] = "entry"
-        elif re.search(r"\b(?:senior|sr\.?|lead)\b", title_lower):
+        elif re.search(r"\b(?:senior|sr\.?)\b", title_lower):
             enrichment["experience_level"] = "senior"
 
     # --------------------------------------------------------
