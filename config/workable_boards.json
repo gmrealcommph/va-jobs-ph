@@ -98,5 +98,29 @@
   {
   "slug": "careers-at-sleek",
   "name": "Sleek"
+},
+  {
+  "slug": "pearltalent",
+  "name": "Pearl Talent"
+},
+{
+  "slug": "careersactivatetalent",
+  "name": "Activate Talent"
+},
+{
+  "slug": "joinremotely",
+  "name": "Remotely"
+},
+{
+  "slug": "lago-1",
+  "name": "Lago"
+},
+{
+  "slug": "prime-system",
+  "name": "Prime System Solutions"
+},
+{
+  "slug": "rocketams",
+  "name": "RocketAMS"
 }
 ]
