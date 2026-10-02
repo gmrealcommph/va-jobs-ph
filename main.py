@@ -22,6 +22,10 @@ from collectors.workable import (
     fetch_workable_company_logo,
     normalize_workable_job,
 )
+from collectors.himalayas import (
+    fetch_himalayas_jobs,
+    normalize_himalayas_job,
+)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -2435,6 +2439,7 @@ def main():
                 "ashby",
                 "greenhouse",
                 "workable",
+                "himalayas",
             }:
                 (
                     remote_decision,
@@ -3004,6 +3009,78 @@ def main():
             except Exception as error:
                 total_errors += 1
 
+                print(
+                    f"  JOB ERROR: "
+                    f"{raw_job.get('title', 'Unknown')} "
+                    f"- {error}"
+                )
+
+    # =====================================================
+    # HIMALAYAS
+    # =====================================================
+
+    print(
+        "\n================================"
+    )
+    print("HIMALAYAS")
+    print(
+        "================================"
+    )
+
+    print(
+        "\nFetching Himalayas jobs: "
+        "Philippines + worldwide eligible"
+    )
+
+    try:
+        raw_jobs = fetch_himalayas_jobs(
+            country="PH"
+        )
+
+    except Exception as error:
+        total_errors += 1
+        print(
+            "ERROR fetching Himalayas jobs: "
+            f"{error}"
+        )
+
+    else:
+        print(
+            f"Found {len(raw_jobs)} jobs"
+        )
+
+        total_fetched += len(raw_jobs)
+
+        def himalayas_job_id(raw_job):
+            return raw_job.get("guid")
+
+        successful_boards.append({
+            "source": "himalayas",
+            "source_board": "philippines",
+            "job_ids": {
+                str(himalayas_job_id(raw_job))
+                for raw_job in raw_jobs
+                if himalayas_job_id(raw_job)
+                is not None
+            },
+        })
+
+        for raw_job in raw_jobs:
+            try:
+                job = normalize_himalayas_job(
+                    raw_job
+                )
+
+                process_job(
+                    job,
+                    raw_title=raw_job.get(
+                        "title",
+                        "Unknown",
+                    ),
+                )
+
+            except Exception as error:
+                total_errors += 1
                 print(
                     f"  JOB ERROR: "
                     f"{raw_job.get('title', 'Unknown')} "
