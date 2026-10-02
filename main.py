@@ -1900,6 +1900,7 @@ def enrich_job(job):
 
     enrichment = {
         "employment_type": None,
+        "engagement_type": None,
         "salary_min_usd": None,
         "salary_max_usd": None,
         "salary_period": None,
@@ -1909,42 +1910,71 @@ def enrich_job(job):
     }
 
     # --------------------------------------------------------
-    # 1. EMPLOYMENT TYPE
+    # 1. WORKLOAD + ENGAGEMENT TYPE
     # --------------------------------------------------------
-    # Structured ATS/source metadata wins when present. This avoids
-    # description wording such as "full-time contractor" overriding a
-    # source that explicitly classifies the engagement as Contractor.
-    structured_type = clean_text(
-        job.get("employment_type")
-        or job.get("employmentType")
-        or job.get("commitment")
-    ).lower()
+    # employment_type = full_time / part_time
+    # engagement_type = employee / contractor / freelance
+    # These are independent, so a job may be full_time + contractor.
 
-    structured_employment_patterns = [
-        ("part_time", [r"\bpart[- ]time\b", r"\bpart_time\b"]),
-        ("full_time", [r"\bfull[- ]time\b", r"\bfull_time\b"]),
-        ("freelance", [r"\bfreelance(?:r)?\b"]),
-        ("contract", [r"\bcontract(?:or)?\b", r"\bfixed[- ]term\b"]),
+    structured_values = [
+        clean_text(job.get("employment_type")).lower(),
+        clean_text(job.get("employmentType")).lower(),
+        clean_text(job.get("commitment")).lower(),
+        clean_text(job.get("engagement_type")).lower(),
+        clean_text(job.get("engagementType")).lower(),
+    ]
+    structured_text = " ".join(value for value in structured_values if value)
+
+    workload_patterns = [
+        ("part_time", [r"\bpart[- _]time\b"]),
+        ("full_time", [r"\bfull[- _]time\b"]),
     ]
 
-    if structured_type:
-        for value, patterns in structured_employment_patterns:
-            if any(re.search(pattern, structured_type) for pattern in patterns):
+    # Prefer structured workload metadata.
+    for value, patterns in workload_patterns:
+        if any(re.search(pattern, structured_text) for pattern in patterns):
+            enrichment["employment_type"] = value
+            break
+
+    # Recover workload from explicit listing wording if needed.
+    if enrichment["employment_type"] is None:
+        for value, patterns in workload_patterns:
+            if any(re.search(pattern, combined) for pattern in patterns):
                 enrichment["employment_type"] = value
                 break
 
-    # If no structured type exists, prefer explicit workload wording
-    # (full-time/part-time), then engagement wording (contract/freelance).
-    if enrichment["employment_type"] is None:
-        fallback_employment_patterns = [
-            ("part_time", [r"\bpart[- ]time\b", r"\bpart time employment\b"]),
-            ("full_time", [r"\bfull[- ]time\b", r"\bfull time employment\b"]),
-            ("freelance", [r"\bfreelance(?:r)?\b"]),
-            ("contract", [r"\bindependent contractor\b", r"\bcontract role\b", r"\bfixed[- ]term\b"]),
-        ]
-        for value, patterns in fallback_employment_patterns:
+    engagement_patterns = [
+        ("freelance", [
+            r"\bfreelance(?:r)?\b",
+        ]),
+        ("contractor", [
+            r"\bindependent contractor\b",
+            r"\bcontractor agreement\b",
+            r"\bcontractor role\b",
+            r"\bcontractor position\b",
+            r"\bcontract role\b",
+            r"\bcontract position\b",
+            r"\bcontractor\b",
+        ]),
+        ("employee", [
+            r"\bpermanent employee\b",
+            r"\bpermanent employment\b",
+            r"\bdirect employee\b",
+            r"\bemployment relationship\b",
+        ]),
+    ]
+
+    # Prefer explicit structured engagement metadata.
+    for value, patterns in engagement_patterns:
+        if any(re.search(pattern, structured_text) for pattern in patterns):
+            enrichment["engagement_type"] = value
+            break
+
+    # Independently recover explicit engagement wording.
+    if enrichment["engagement_type"] is None:
+        for value, patterns in engagement_patterns:
             if any(re.search(pattern, combined) for pattern in patterns):
-                enrichment["employment_type"] = value
+                enrichment["engagement_type"] = value
                 break
 
     # --------------------------------------------------------
