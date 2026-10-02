@@ -1,5 +1,6 @@
 import html
 import re
+import time
 from datetime import datetime, timezone
 
 import requests
@@ -14,39 +15,117 @@ HEADERS = {
 }
 
 
-def fetch_himalayas_jobs(country="PH", timeout=30, max_pages=200):
+def fetch_himalayas_jobs(
+    country="PH",
+    timeout=30,
+    max_pages=200,
+    request_delay=1.0,
+    max_retries=5,
+    return_metadata=False,
+):
     """
     Fetch remote jobs eligible for a country from Himalayas' public API.
 
-    Himalayas' country search includes worldwide-friendly jobs unless
-    exclude_worldwide=true is supplied. We intentionally leave that flag
-    unset so a PH search returns both Philippines-restricted and worldwide
-    remote jobs that a Philippines-based applicant can apply for.
+    The API can rate-limit long pagination runs. Requests are deliberately
+    paced, HTTP 429 responses are retried with Retry-After when available,
+    and a later-page failure returns the jobs already collected instead of
+    discarding the entire source.
+
+    When return_metadata=True, return (jobs, complete). ``complete`` is False
+    whenever pagination had to stop because of a request/API/safety failure.
+    Callers must not reconcile expired jobs from an incomplete fetch.
     """
     all_jobs = []
     seen_ids = set()
     page = 1
+    complete = True
 
     while page <= max_pages:
-        response = requests.get(
-            HIMALAYAS_SEARCH_API,
-            params={
-                "country": country,
-                "sort": "recent",
-                "page": page,
-            },
-            headers=HEADERS,
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        data = response.json()
+        data = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.get(
+                    HIMALAYAS_SEARCH_API,
+                    params={
+                        "country": country,
+                        "sort": "recent",
+                        "page": page,
+                    },
+                    headers=HEADERS,
+                    timeout=timeout,
+                )
+
+                if response.status_code == 429:
+                    if attempt >= max_retries:
+                        print(
+                            f"Himalayas page {page}: rate limit persisted "
+                            f"after {max_retries + 1} attempts; keeping "
+                            f"{len(all_jobs)} jobs already collected and "
+                            "stopping safely."
+                        )
+                        complete = False
+                        break
+
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        wait_seconds = float(retry_after)
+                    except (TypeError, ValueError):
+                        wait_seconds = min(60.0, 2 ** attempt * 5.0)
+
+                    wait_seconds = max(1.0, wait_seconds)
+                    print(
+                        f"Himalayas page {page}: HTTP 429; waiting "
+                        f"{wait_seconds:g}s before retry "
+                        f"{attempt + 1}/{max_retries}."
+                    )
+                    time.sleep(wait_seconds)
+                    continue
+
+                response.raise_for_status()
+                data = response.json()
+                break
+
+            except (requests.RequestException, ValueError) as error:
+                if attempt >= max_retries:
+                    print(
+                        f"Himalayas page {page}: fetch failed after "
+                        f"{max_retries + 1} attempts ({error}); keeping "
+                        f"{len(all_jobs)} jobs already collected and "
+                        "stopping safely."
+                    )
+                    complete = False
+                    break
+
+                wait_seconds = min(60.0, 2 ** attempt * 5.0)
+                print(
+                    f"Himalayas page {page}: request error ({error}); "
+                    f"waiting {wait_seconds:g}s before retry "
+                    f"{attempt + 1}/{max_retries}."
+                )
+                time.sleep(wait_seconds)
+
+        if data is None:
+            break
 
         if not isinstance(data, dict):
-            raise ValueError("Unexpected Himalayas API response")
+            print(
+                f"Himalayas page {page}: unexpected API response; "
+                f"keeping {len(all_jobs)} jobs already collected and "
+                "stopping safely."
+            )
+            complete = False
+            break
 
         jobs = data.get("jobs") or []
         if not isinstance(jobs, list):
-            raise ValueError("Unexpected Himalayas jobs payload")
+            print(
+                f"Himalayas page {page}: unexpected jobs payload; "
+                f"keeping {len(all_jobs)} jobs already collected and "
+                "stopping safely."
+            )
+            complete = False
+            break
 
         for job in jobs:
             if not isinstance(job, dict):
@@ -63,6 +142,12 @@ def fetch_himalayas_jobs(country="PH", timeout=30, max_pages=200):
 
             all_jobs.append(job)
 
+        if page == 1 or page % 10 == 0:
+            print(
+                f"Himalayas page {page}: "
+                f"{len(all_jobs)} unique jobs collected"
+            )
+
         total_count = data.get("totalCount")
         page_size = data.get("limit") or len(jobs) or 20
 
@@ -72,17 +157,24 @@ def fetch_himalayas_jobs(country="PH", timeout=30, max_pages=200):
         if isinstance(total_count, int) and len(all_jobs) >= total_count:
             break
 
-        # Search uses 1-based page pagination. If the API returns fewer than
-        # its page size and no trustworthy total remains, this is the last page.
         if not isinstance(total_count, int) and len(jobs) < page_size:
             break
 
         page += 1
 
+        if request_delay:
+            time.sleep(max(0.0, request_delay))
+
     if page > max_pages:
-        raise RuntimeError(
-            f"Himalayas pagination exceeded safety limit of {max_pages} pages"
+        print(
+            f"Himalayas reached the safety limit of {max_pages} pages; "
+            f"keeping {len(all_jobs)} jobs and skipping expiration "
+            "reconciliation for this run."
         )
+        complete = False
+
+    if return_metadata:
+        return all_jobs, complete
 
     return all_jobs
 
