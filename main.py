@@ -1254,6 +1254,9 @@ def check_va_relevance(job):
         "office coordinator",
         "office assistant",
         "remote assistant",
+        "office administrator",
+        "property management assistant",
+        "service coordinator",
 
         # Customer service / support
         "customer support",
@@ -1311,6 +1314,10 @@ def check_va_relevance(job):
         "ppc manager",
         "seo specialist",
         "seo assistant",
+        "growth marketer",
+        "performance marketer",
+        "paid media specialist",
+        "google ads specialist",
 
         # Social / community
         "social media",
@@ -1324,6 +1331,9 @@ def check_va_relevance(job):
         "shopify",
         "amazon specialist",
         "amazon virtual assistant",
+        "amazon account specialist",
+        "amazon ppc specialist",
+        "amazon listing content specialist",
 
         # Bookkeeping / finance support
         "bookkeeper",
@@ -1333,7 +1343,15 @@ def check_va_relevance(job):
         "accounts receivable",
         "billing specialist",
         "billing representative",
+        "medical biller",
+        "scheduling coordinator",
+        "records coordinator",
         "payroll specialist",
+        "accountant",
+        "accounting specialist",
+        "finance specialist",
+        "finance assistant",
+        "accounts officer",
 
         # Recruitment / HR
         "recruiter",
@@ -1345,6 +1363,9 @@ def check_va_relevance(job):
         "hr specialist",
         "hr generalist",
         "human resources assistant",
+        "talent acquisition specialist",
+        "talent acquisition associate",
+        "recruitment specialist",
 
         # Writing / content
         "copywriter",
@@ -1356,6 +1377,9 @@ def check_va_relevance(job):
         "graphic designer",
         "video editor",
         "motion designer",
+        "digital designer",
+        "production designer",
+        "graphics designer",
 
         # Data/admin
         "data entry",
@@ -1625,6 +1649,8 @@ def classify_job(job):
                 "personal assistant",
                 "administrative assistant",
                 "admin assistant",
+                "office administrator",
+                "property management assistant",
             ],
         ),
         (
@@ -1642,6 +1668,9 @@ def classify_job(job):
                 "onboarding documents associate",
                 "customer success",
                 "customer experience",
+                "medical biller",
+                "scheduling coordinator",
+                "records coordinator",
             ],
         ),
         (
@@ -1676,6 +1705,9 @@ def classify_job(job):
                 "ppc manager",
                 "seo",
                 "email marketer",
+                "performance marketer",
+                "paid media specialist",
+                "google ads specialist",
             ],
         ),
         (
@@ -1685,6 +1717,9 @@ def classify_job(job):
                 "e-commerce",
                 "shopify",
                 "amazon specialist",
+                "amazon account specialist",
+                "amazon ppc specialist",
+                "amazon listing content specialist",
             ],
         ),
         (
@@ -1697,6 +1732,9 @@ def classify_job(job):
                 "accounts receivable",
                 "finance",
                 "payroll",
+                "accountant",
+                "finance assistant",
+                "finance specialist",
             ],
         ),
         (
@@ -1713,6 +1751,9 @@ def classify_job(job):
                 "people operations",
                 "hr assistant",
                 "hr generalist",
+                "talent acquisition specialist",
+                "talent acquisition associate",
+                "recruitment specialist",
             ],
         ),
         (
@@ -1722,6 +1763,9 @@ def classify_job(job):
                 "designer",
                 "video editor",
                 "motion designer",
+                "digital designer",
+                "production designer",
+                "graphics designer",
             ],
         ),
         (
