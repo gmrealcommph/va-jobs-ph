@@ -22,14 +22,13 @@
   {
     "slug": "gohighlevel",
     "name": "HighLevel"
-  }
-  ,
-{
-  "slug": "hostinger",
-  "name": "Hostinger"
-},
+  },
   {
-  "slug": "outsourcedstaff",
-  "name": "Outsourced Staff"
-}
+    "slug": "hostinger",
+    "name": "Hostinger"
+  },
+  {
+    "slug": "outsourcedstaff",
+    "name": "Outsourced Staff"
+  }
 ]
