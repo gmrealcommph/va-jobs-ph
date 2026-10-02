@@ -42,5 +42,45 @@
   {
     "slug": "staffing-for-doctors",
     "name": "Staffing for Doctors"
-  }
+  },
+  {
+  "slug": "crewbloom",
+  "name": "CrewBloom"
+},
+{
+  "slug": "helpflow",
+  "name": "HelpFlow"
+},
+{
+  "slug": "twoconnect-careers",
+  "name": "Twoconnect"
+},
+{
+  "slug": "hunt-st",
+  "name": "Hunt St"
+},
+{
+  "slug": "remote-raven",
+  "name": "Remote Raven"
+},
+{
+  "slug": "more-staffing-llc",
+  "name": "More Staffing"
+},
+{
+  "slug": "eandd",
+  "name": "Elevate and Delegate"
+},
+{
+  "slug": "helperheroes",
+  "name": "Helper Heroes"
+},
+{
+  "slug": "aidey",
+  "name": "Aidey"
+},
+{
+  "slug": "remoteva",
+  "name": "Remote VA"
+}
 ]
