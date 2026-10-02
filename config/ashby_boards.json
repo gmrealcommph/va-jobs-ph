@@ -121,5 +121,9 @@
   {
   "slug": "ansiblehealth",
   "name": "AnsibleHealth"
+},
+  {
+  "slug": "mindmaven",
+  "name": "Mindmaven"
 }
 ]
