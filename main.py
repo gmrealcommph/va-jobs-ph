@@ -1009,6 +1009,24 @@ def check_active_vacancy(job):
     title = clean_text(job.get("title")).lower()
     description = clean_text(job.get("description")).lower()
 
+    # Explicit title markers showing the posting is not a normal
+    # current public vacancy. Keep these narrow so ordinary uses
+    # of words such as "closed" or "internal" are not overmatched.
+    non_active_title_patterns = [
+        r"(?:^|[\[\(\-–—|:/])\s*closed\s*(?:[\]\)]|$)",
+        r"\binternal\s+opening\b",
+        r"\bactive\s+pooling\b",
+    ]
+
+    if any(
+        re.search(pattern, title)
+        for pattern in non_active_title_patterns
+    ):
+        return (
+            "reject",
+            "Posting title explicitly indicates a closed, internal-only, or pooling vacancy",
+        )
+
     # ---------------------------------------------------------
     # STRONG TITLE SIGNALS
     # ---------------------------------------------------------
@@ -1322,6 +1340,8 @@ def check_va_relevance(job):
         "sales representative",
         "inside sales",
         "sales associate",
+        "sales assistant",
+        "lead qualifier",
 
         # Operations / coordination
         "operations assistant",
@@ -1331,6 +1351,8 @@ def check_va_relevance(job):
         "project coordinator",
         "project assistant",
         "business operations coordinator",
+        "transaction coordinator",
+        "dispatcher",
 
         # Project management
         "junior project manager",
@@ -1353,6 +1375,9 @@ def check_va_relevance(job):
         "performance marketer",
         "paid media specialist",
         "google ads specialist",
+        "google ads",
+        "facebook ads",
+        "content marketer",
 
         # Social / community
         "social media",
@@ -1401,6 +1426,10 @@ def check_va_relevance(job):
         "talent acquisition specialist",
         "talent acquisition associate",
         "recruitment specialist",
+        "recruiting coordinator",
+        "recruiting specialist",
+        "hr administrator",
+        "sourcing specialist",
 
         # Writing / content
         "copywriter",
@@ -1415,6 +1444,7 @@ def check_va_relevance(job):
         "digital designer",
         "production designer",
         "graphics designer",
+        "video producer",
 
         # Data/admin
         "data entry",
