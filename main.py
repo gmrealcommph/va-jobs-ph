@@ -2441,14 +2441,16 @@ def main():
     print("SAMPLE REJECTIONS")
     print("================================")
 
-    for reason, samples in sorted(
+    top_rejection_samples = sorted(
         rejection_samples.items(),
         key=lambda item: rejection_breakdown.get(
             item[0],
             0,
         ),
         reverse=True,
-    ):
+    )[:15]
+
+    for reason, samples in top_rejection_samples:
         print(
             f"\n{reason} "
             f"({rejection_breakdown.get(reason, 0)})"
@@ -2460,6 +2462,24 @@ def main():
                 f"{sample['company']} | "
                 f"{sample['location']}"
             )
+
+
+    # =====================================================
+    # FINAL SUMMARY
+    # =====================================================
+    # Keep this as the final log block so GitHub Actions always
+    # shows the key collection numbers after verbose diagnostics.
+
+    print("\n================================")
+    print("FINAL SUMMARY")
+    print("================================")
+    print(f"Fetched:   {total_fetched}")
+    print(f"Published: {total_published}")
+    print(f"Review:    {total_review}")
+    print(f"Rejected:  {total_rejected}")
+    print(f"Expired:   {total_expired}")
+    print(f"Errors:    {total_errors}")
+    print("================================")
 
 
 if __name__ == "__main__":
