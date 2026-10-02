@@ -2009,6 +2009,7 @@ def main():
     review_breakdown = {}
     source_performance = {}
     rejection_samples = {}
+    review_samples = []
 
     def get_source_key(job):
         company = job.get("company") or "Unknown"
@@ -2054,6 +2055,13 @@ def main():
 
         stats = ensure_source_stats(job)
         stats["review"] += 1
+
+        review_samples.append({
+            "title": job.get("title") or "Unknown",
+            "company": job.get("company") or "Unknown",
+            "location": job.get("location") or "Unknown",
+            "reason": reason,
+        })
 
     # Contains only boards whose ATS fetch completed successfully.
     # These are the only boards eligible for lifecycle cleanup.
@@ -2812,6 +2820,32 @@ def main():
                 f"{sample['location']}"
             )
 
+
+    # =====================================================
+    # SAMPLE REVIEW JOBS
+    # =====================================================
+
+    print("\n================================")
+    print("SAMPLE REVIEW JOBS")
+    print("================================")
+
+    if not review_samples:
+        print("No jobs sent to review.")
+    else:
+        for index, sample in enumerate(
+            review_samples,
+            start=1,
+        ):
+            print(
+                f"{index:3}. "
+                f"{sample['title']} | "
+                f"{sample['company']} | "
+                f"{sample['location']} | "
+                f"{sample['reason']}"
+            )
+
+    print("--------------------------------")
+    print(f"Total review jobs: {len(review_samples)}")
 
     # =====================================================
     # FINAL SUMMARY
