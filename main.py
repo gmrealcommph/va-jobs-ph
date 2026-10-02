@@ -2002,6 +2002,48 @@ def flush_job_batches(
         f"{len(review_jobs)}"
     )
 
+def get_live_inventory_count(supabase):
+    """
+    Return the authoritative live inventory count used for launch tracking.
+
+    Prefer the public_jobs view because that is the frontend-facing dataset.
+    If that view is unavailable for any reason, fall back to active rows in
+    public.jobs and label the fallback accurately.
+    """
+
+    try:
+        response = (
+            supabase.table("public_jobs")
+            .select("*", count="exact", head=True)
+            .execute()
+        )
+
+        if response.count is not None:
+            return response.count, "Visible jobs (public_jobs)"
+
+    except Exception as error:
+        print(
+            "Could not count public_jobs view; "
+            f"falling back to active jobs table rows: {error}"
+        )
+
+    try:
+        response = (
+            supabase.table("jobs")
+            .select("*", count="exact", head=True)
+            .eq("status", "active")
+            .execute()
+        )
+
+        if response.count is not None:
+            return response.count, "Active jobs in DB"
+
+    except Exception as error:
+        print(f"Could not count active jobs in DB: {error}")
+
+    return None, "Active jobs in DB"
+
+
 def reconcile_expired_jobs(
     supabase,
     successful_boards,
@@ -2948,6 +2990,12 @@ def main():
         )
     )
 
+    # Count the live frontend inventory only after all writes and
+    # expired-job reconciliation have completed.
+    live_inventory_count, live_inventory_label = (
+        get_live_inventory_count(supabase)
+    )
+
     # =====================================================
     # SUMMARY
     # =====================================================
@@ -2964,7 +3012,7 @@ def main():
         f"{total_fetched}"
     )
     print(
-        f"Published: "
+        f"Qualified: "
         f"{total_published}"
     )
     print(
@@ -2983,6 +3031,13 @@ def main():
         f"Errors:    "
         f"{total_errors}"
     )
+    if live_inventory_count is not None:
+        print(
+            f"{live_inventory_label}: "
+            f"{live_inventory_count}"
+        )
+    else:
+        print(f"{live_inventory_label}: unavailable")
     print(
         "================================"
     )
@@ -3113,11 +3168,15 @@ def main():
     print("FINAL SUMMARY")
     print("================================")
     print(f"Fetched:   {total_fetched}")
-    print(f"Published: {total_published}")
+    print(f"Qualified: {total_published}")
     print(f"Review:    {total_review}")
     print(f"Rejected:  {total_rejected}")
     print(f"Expired:   {total_expired}")
     print(f"Errors:    {total_errors}")
+    if live_inventory_count is not None:
+        print(f"{live_inventory_label}: {live_inventory_count}")
+    else:
+        print(f"{live_inventory_label}: unavailable")
     print("================================")
 
 
