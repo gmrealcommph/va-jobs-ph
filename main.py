@@ -3033,8 +3033,9 @@ def main():
     )
 
     try:
-        raw_jobs = fetch_himalayas_jobs(
-            country="PH"
+        raw_jobs, himalayas_fetch_complete = fetch_himalayas_jobs(
+            country="PH",
+            return_metadata=True,
         )
 
     except Exception as error:
@@ -3054,16 +3055,23 @@ def main():
         def himalayas_job_id(raw_job):
             return raw_job.get("guid")
 
-        successful_boards.append({
-            "source": "himalayas",
-            "source_board": "philippines",
-            "job_ids": {
-                str(himalayas_job_id(raw_job))
-                for raw_job in raw_jobs
-                if himalayas_job_id(raw_job)
-                is not None
-            },
-        })
+        if himalayas_fetch_complete:
+            successful_boards.append({
+                "source": "himalayas",
+                "source_board": "philippines",
+                "job_ids": {
+                    str(himalayas_job_id(raw_job))
+                    for raw_job in raw_jobs
+                    if himalayas_job_id(raw_job)
+                    is not None
+                },
+            })
+        else:
+            print(
+                "Himalayas fetch was partial; expired-job "
+                "reconciliation will be skipped for Himalayas "
+                "this run."
+            )
 
         for raw_job in raw_jobs:
             try:
