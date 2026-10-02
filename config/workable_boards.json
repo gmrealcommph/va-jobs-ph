@@ -8,7 +8,7 @@
     "name": "Virtual Staff 365"
   },
   {
-    "slug": "globalmedicalvirtualassistants",
+    "slug": "gmva",
     "name": "Global Medical Virtual Assistants"
   },
   {
@@ -18,5 +18,29 @@
   {
     "slug": "virtual-assist",
     "name": "Virtual Assist"
+  },
+  {
+    "slug": "quickteam",
+    "name": "QuickTeam"
+  },
+  {
+    "slug": "c9staff",
+    "name": "C9 Staff"
+  },
+  {
+    "slug": "hireframe",
+    "name": "Hireframe"
+  },
+  {
+    "slug": "pairedrecruiting",
+    "name": "Paired"
+  },
+  {
+    "slug": "genusagencyai",
+    "name": "Global Pacific Support"
+  },
+  {
+    "slug": "staffing-for-doctors",
+    "name": "Staffing for Doctors"
   }
 ]
