@@ -39,4 +39,22 @@
     "slug": "lightsource",
     "name": "LightSource"
   }
+,
+{
+  "slug": "multiplymii",
+  "name": "MultiplyMii"
+},
+{
+  "slug": "clickup",
+  "name": "ClickUp"
+},
+{
+  "slug": "Panoptyc",
+  "name": "Panoptyc"
+},
+{
+  "slug": "moxie",
+  "name": "Moxie"
+}
+  
 ]
