@@ -2641,8 +2641,13 @@ def main():
         job["category"] = classify_job(job)
         job["status"] = "active"
 
+        # Enrichment must happen on the batched record that is actually
+        # written by flush_job_batches(). The legacy save_published_job()
+        # path is not used by the main collector run.
+        enriched_job = enrich_job(job.copy())
+
         published_jobs.append(
-            job.copy()
+            enriched_job
         )
 
     def queue_review_job(
