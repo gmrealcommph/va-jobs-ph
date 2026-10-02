@@ -687,13 +687,29 @@ def check_remote_status(job):
 
 def check_philippines_eligibility(job):
     """
-    Return:
-      publish = clear evidence Philippines applicants are eligible
-      review  = potentially eligible, but location is ambiguous
-      reject  = no evidence Philippines applicants are eligible
+    Determine whether Philippines-based applicants are eligible.
+
+    Evidence priority:
+    1. Explicit Philippines location
+    2. APAC / Southeast Asia location
+    3. Worldwide/global location
+    4. Explicit description restrictions that exclude the Philippines
+    5. Contextual description evidence that includes the Philippines,
+       APAC/Southeast Asia, or worldwide/global applicants
+    6. Generic/blank remote locations remain review
+    7. Other explicit locations are rejected
+
+    Merely mentioning "Philippines" somewhere in the description is not
+    enough. Description matches require contextual hiring/location language.
     """
 
-    location = clean_text(job.get("location")).lower().strip()
+    location = clean_text(
+        job.get("location")
+    ).lower().strip()
+
+    description = clean_text(
+        job.get("description")
+    ).lower().strip()
 
     philippines_terms = [
         "philippines",
@@ -708,7 +724,10 @@ def check_philippines_eligibility(job):
         "davao",
     ]
 
-    if any(term in location for term in philippines_terms):
+    if any(
+        term in location
+        for term in philippines_terms
+    ):
         return (
             "publish",
             "Location explicitly allows Philippines",
@@ -722,7 +741,10 @@ def check_philippines_eligibility(job):
         "south east asia",
     ]
 
-    if any(term in location for term in apac_terms):
+    if any(
+        term in location
+        for term in apac_terms
+    ):
         return (
             "publish",
             "Location explicitly allows APAC/Asia applicants",
@@ -738,10 +760,155 @@ def check_philippines_eligibility(job):
         "remote - worldwide",
     ]
 
-    if any(term in location for term in worldwide_terms):
+    if any(
+        term in location
+        for term in worldwide_terms
+    ):
         return (
             "publish",
             "Location explicitly allows worldwide applicants",
+        )
+
+    # ---------------------------------------------------------
+    # DESCRIPTION: EXPLICIT RESTRICTIONS
+    # ---------------------------------------------------------
+    # These patterns are deliberately conservative. They target
+    # common wording that explicitly limits where the candidate
+    # may live/work. This check runs before positive description
+    # evidence so a posting such as "global company, US applicants
+    # only" cannot be published because of the word "global".
+
+    exclusion_patterns = [
+        (
+            r"\b(?:candidates?|applicants?|employees?|hires?)\b"
+            r".{0,80}\b(?:must|need to|required to)\b"
+            r".{0,50}\b(?:reside|live|be based|be located|work)\b"
+            r".{0,50}\b(?:in|within)\s+"
+            r"(?:the\s+)?(?:united states|u\.?s\.?a?|usa|canada|"
+            r"united kingdom|u\.?k\.?|uk|australia|new zealand|"
+            r"india|mexico|brazil|south africa|europe|emea|latam)\b"
+        ),
+        (
+            r"\b(?:only|exclusively)\s+(?:open\s+to\s+)?"
+            r"(?:candidates?|applicants?|residents?|hires?)?"
+            r".{0,50}\b(?:in|from|within|based in|located in)\s+"
+            r"(?:the\s+)?(?:united states|u\.?s\.?a?|usa|canada|"
+            r"united kingdom|u\.?k\.?|uk|australia|new zealand|"
+            r"india|mexico|brazil|south africa|europe|emea|latam)\b"
+        ),
+        (
+            r"\b(?:united states|u\.?s\.?a?|usa|canada|"
+            r"united kingdom|u\.?k\.?|uk|australia|new zealand|"
+            r"india|mexico|brazil|south africa|europe|emea|latam)"
+            r"[- ]only\b"
+        ),
+        (
+            r"\bremote\s+(?:within|in|from)\s+"
+            r"(?:the\s+)?(?:united states|u\.?s\.?a?|usa|canada|"
+            r"united kingdom|u\.?k\.?|uk|australia|new zealand|"
+            r"india|mexico|brazil|south africa|europe|emea|latam)\b"
+        ),
+    ]
+
+    if description and any(
+        re.search(pattern, description)
+        for pattern in exclusion_patterns
+    ):
+        return (
+            "reject",
+            "Job description explicitly restricts hiring to a non-Philippines location",
+        )
+
+    # ---------------------------------------------------------
+    # DESCRIPTION: PHILIPPINES ELIGIBILITY
+    # ---------------------------------------------------------
+    # Require the Philippines to appear near contextual words that
+    # indicate candidate location/hiring eligibility. This avoids
+    # publishing a job merely because a company mentions an office,
+    # customer, market, or unrelated Philippine reference.
+
+    ph_context_patterns = [
+        r"\b(?:open to|hiring|hire|recruiting|seeking|looking for)"
+        r".{0,100}\b(?:candidates?|applicants?|talent|people|professionals?)"
+        r".{0,100}\b(?:in|from|based in|located in)?\s*(?:the\s+)?philippines\b",
+        r"\b(?:candidates?|applicants?|talent|people|professionals?)"
+        r".{0,100}\b(?:in|from|based in|located in|residing in)\s+"
+        r"(?:the\s+)?philippines\b",
+        r"\b(?:must|should|need to|required to)\b"
+        r".{0,60}\b(?:reside|live|be based|be located)\b"
+        r".{0,60}\b(?:in\s+)?(?:the\s+)?philippines\b",
+        r"\b(?:philippines|philippine)[- ]based\b",
+        r"\bbased\s+in\s+(?:the\s+)?philippines\b",
+        r"\blocated\s+in\s+(?:the\s+)?philippines\b",
+        r"\bremote\s+(?:in|from|within)\s+(?:the\s+)?philippines\b",
+        r"\bwork\s+(?:remotely\s+)?from\s+(?:the\s+)?philippines\b",
+        r"\b(?:location|work location|candidate location)\s*[:\-]\s*"
+        r"(?:remote\s*[-,/]\s*)?(?:the\s+)?philippines\b",
+    ]
+
+    if description and any(
+        re.search(pattern, description)
+        for pattern in ph_context_patterns
+    ):
+        return (
+            "publish",
+            "Job description explicitly allows Philippines applicants",
+        )
+
+    # ---------------------------------------------------------
+    # DESCRIPTION: APAC / SOUTHEAST ASIA ELIGIBILITY
+    # ---------------------------------------------------------
+
+    asia_region = (
+        r"(?:apac|asia[- ]pacific|southeast asia|south east asia)"
+    )
+
+    apac_context_patterns = [
+        rf"\b(?:open to|hiring|hire|recruiting|seeking|looking for)"
+        rf".{{0,100}}\b(?:candidates?|applicants?|talent|people|professionals?)"
+        rf".{{0,100}}\b(?:in|from|across|within)?\s*{asia_region}\b",
+        rf"\b(?:candidates?|applicants?|talent|people|professionals?)"
+        rf".{{0,100}}\b(?:in|from|across|within|based in|located in)\s+"
+        rf"{asia_region}\b",
+        rf"\b(?:remote|work remotely)\s+(?:in|from|within|across)\s+"
+        rf"{asia_region}\b",
+        rf"\b(?:location|work location|candidate location)\s*[:\-]\s*"
+        rf"(?:remote\s*[-,/]\s*)?{asia_region}\b",
+    ]
+
+    if description and any(
+        re.search(pattern, description)
+        for pattern in apac_context_patterns
+    ):
+        return (
+            "publish",
+            "Job description explicitly allows APAC/Southeast Asia applicants",
+        )
+
+    # ---------------------------------------------------------
+    # DESCRIPTION: WORLDWIDE / GLOBAL ELIGIBILITY
+    # ---------------------------------------------------------
+
+    worldwide_context_patterns = [
+        r"\b(?:open to|hiring|hire|recruiting|seeking)"
+        r".{0,100}\b(?:candidates?|applicants?|talent|people|professionals?)"
+        r".{0,100}\b(?:worldwide|globally|anywhere in the world)\b",
+        r"\b(?:candidates?|applicants?|talent|people|professionals?)"
+        r".{0,100}\b(?:worldwide|globally|from anywhere|anywhere in the world)\b",
+        r"\bwork\s+from\s+anywhere\b",
+        r"\bremote\s+(?:worldwide|globally)\b",
+        r"\bglobally\s+remote\b",
+        r"\b(?:location|work location|candidate location)\s*[:\-]\s*"
+        r"(?:worldwide|global|anywhere)\b",
+    ]
+
+    if description and any(
+        re.search(pattern, description)
+        for pattern in worldwide_context_patterns
+    ):
+        return (
+            "publish",
+            "Job description explicitly allows worldwide applicants",
         )
 
     generic_remote = [
