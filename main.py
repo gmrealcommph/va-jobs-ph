@@ -1022,12 +1022,32 @@ def check_active_vacancy(job):
         "expressions of interest",
         "general application",
         "general applications",
+        "pooling only",
     ]
 
     if any(term in title for term in non_active_title_terms):
         return (
             "reject",
-            "Posting is a talent pool or future-opportunity listing",
+            "Posting is a talent pool, pooling-only, or future-opportunity listing",
+        )
+
+    # Treat "pooling" as non-active only when it appears as a recruitment
+    # qualifier in the title. Do not reject unrelated words such as
+    # "pool", "pooling data", or other operational uses in descriptions.
+    pooling_title_patterns = [
+        r"\(\s*pooling(?:\s+only)?\s*\)",
+        r"(?:^|[-–—|:/])\s*pooling(?:\s+only)?\s*$",
+        r"\bfor\s+pooling(?:\s+only)?\b",
+        r"\bpooling\s+only\b",
+    ]
+
+    if any(
+        re.search(pattern, title)
+        for pattern in pooling_title_patterns
+    ):
+        return (
+            "reject",
+            "Posting title explicitly indicates recruitment pooling rather than an active vacancy",
         )
 
     # ---------------------------------------------------------
@@ -1048,6 +1068,17 @@ def check_active_vacancy(job):
         "join our talent pool",
         "join our talent community",
         "expression of interest for future",
+        "this posting is for pooling purposes",
+        "this position is for pooling purposes",
+        "this role is for pooling purposes",
+        "for pooling purposes only",
+        "pooling for future openings",
+        "pooling for future opportunities",
+        "pooling for future hiring",
+        "pooling for future vacancies",
+        "this is a pooling position",
+        "this is a pooling role",
+        "this is a pooling post",
     ]
 
     if any(
