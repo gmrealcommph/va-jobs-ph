@@ -81,4 +81,37 @@
   "slug": "Playbook",
   "name": "Playbook"
 }  
+,
+{
+  "slug": "instructure",
+  "name": "Instructure"
+},
+{
+  "slug": "Agent",
+  "name": "Agent"
+},
+{
+  "slug": "fathom.video",
+  "name": "Fathom"
+},
+{
+  "slug": "possible-finance",
+  "name": "Possible"
+},
+{
+  "slug": "people-culture-talent",
+  "name": "People Culture Talent"
+},
+{
+  "slug": "maximustribe",
+  "name": "Maximus"
+},
+{
+  "slug": "kirin",
+  "name": "Kirin"
+},
+{
+  "slug": "winona",
+  "name": "Winona"
+}
 ]
