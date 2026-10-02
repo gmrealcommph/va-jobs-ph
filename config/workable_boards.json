@@ -134,5 +134,17 @@
 {
   "slug": "wecloneyou",
   "name": "We Clone You"
+},
+  {
+  "slug": "assistant-launch",
+  "name": "Assistant Launch"
+},
+{
+  "slug": "wisevu",
+  "name": "Wisevu"
+},
+{
+  "slug": "shepherdcareers",
+  "name": "Somewhere"
 }
 ]
