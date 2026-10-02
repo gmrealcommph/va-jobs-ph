@@ -17,6 +17,11 @@ from collectors.ashby import (
     fetch_ashby_jobs,
     fetch_ashby_company_logo,
 )
+from collectors.workable import (
+    fetch_workable_jobs,
+    fetch_workable_company_logo,
+    normalize_workable_job,
+)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -41,6 +46,15 @@ def load_lever_boards():
 def load_ashby_boards():
     with open(
         "config/ashby_boards.json",
+        "r",
+        encoding="utf-8",
+    ) as file:
+        return json.load(file)
+
+
+def load_workable_boards():
+    with open(
+        "config/workable_boards.json",
         "r",
         encoding="utf-8",
     ) as file:
@@ -2068,6 +2082,7 @@ def main():
     greenhouse_boards = load_greenhouse_boards()
     lever_boards = load_lever_boards()
     ashby_boards = load_ashby_boards()
+    workable_boards = load_workable_boards()
 
     total_fetched = 0
     total_published = 0
@@ -2285,6 +2300,7 @@ def main():
             if job.get("source") in {
                 "ashby",
                 "greenhouse",
+                "workable",
             }:
                 (
                     remote_decision,
@@ -2720,6 +2736,123 @@ def main():
                         raw_job,
                         company,
                         slug,
+                        company_logo_url=(
+                            company_logo_url
+                        ),
+                    )
+                )
+
+                process_job(
+                    job,
+                    raw_title=raw_job.get(
+                        "title",
+                        "Unknown",
+                    ),
+                )
+
+            except Exception as error:
+                total_errors += 1
+
+                print(
+                    f"  JOB ERROR: "
+                    f"{raw_job.get('title', 'Unknown')} "
+                    f"- {error}"
+                )
+
+    # =====================================================
+    # WORKABLE
+    # =====================================================
+
+    print(
+        "\n================================"
+    )
+    print("WORKABLE")
+    print(
+        "================================"
+    )
+
+    for board in workable_boards:
+        account = board["slug"]
+        company = board["name"]
+
+        print(
+            f"\nFetching Workable jobs: "
+            f"{company} ({account})"
+        )
+
+        try:
+            raw_jobs = (
+                fetch_workable_jobs(
+                    account
+                )
+            )
+
+        except Exception as error:
+            total_errors += 1
+
+            print(
+                f"ERROR fetching Workable board "
+                f"{company} ({account}): "
+                f"{error}"
+            )
+            continue
+
+        print(
+            f"Found "
+            f"{len(raw_jobs)} jobs"
+        )
+
+        total_fetched += len(raw_jobs)
+
+        try:
+            company_logo_url = (
+                fetch_workable_company_logo(
+                    account
+                )
+            )
+        except Exception as error:
+            company_logo_url = None
+            print(
+                f"  LOGO LOOKUP SKIPPED: "
+                f"{company} - {error}"
+            )
+
+        if company_logo_url:
+            print(
+                f"  LOGO FOUND: "
+                f"{company}"
+            )
+        else:
+            print(
+                f"  LOGO NOT FOUND: "
+                f"{company}"
+            )
+
+        def workable_job_id(raw_job):
+            return (
+                raw_job.get("shortcode")
+                or raw_job.get("id")
+                or raw_job.get("code")
+            )
+
+        successful_boards.append({
+            "source": "workable",
+            "source_board": account,
+            "job_ids": {
+                str(workable_job_id(raw_job))
+                for raw_job in raw_jobs
+                if workable_job_id(raw_job)
+                is not None
+            },
+        })
+
+        for raw_job in raw_jobs:
+            try:
+                job = (
+                    normalize_workable_job(
+                        raw_job,
+                        company=company,
+                        account=account,
                         company_logo_url=(
                             company_logo_url
                         ),
