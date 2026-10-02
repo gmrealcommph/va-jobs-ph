@@ -1852,9 +1852,57 @@ def flush_job_batches(
         for i in range(0, len(items), size):
             yield items[i:i + size]
 
+    def deduplicate_upsert_records(records):
+        """
+        Ensure a single Supabase upsert never contains the same
+        (source, source_job_id) conflict key more than once.
+
+        Some ATS feeds can expose the same underlying posting more
+        than once, such as one posting attached to multiple locations.
+        Postgres rejects duplicate conflict keys inside one
+        INSERT ... ON CONFLICT statement.
+
+        Last record wins so the result is deterministic.
+        """
+        deduplicated = {}
+        records_without_key = []
+
+        for record in records:
+            source = record.get("source")
+            source_job_id = record.get("source_job_id")
+
+            if source and source_job_id:
+                key = (str(source), str(source_job_id))
+                deduplicated[key] = record
+            else:
+                records_without_key.append(record)
+
+        return list(deduplicated.values()) + records_without_key
+
+    original_published_count = len(published_jobs)
+    original_review_count = len(review_jobs)
+
+    published_jobs = deduplicate_upsert_records(published_jobs)
+    review_jobs = deduplicate_upsert_records(review_jobs)
+
+    removed_published_duplicates = (
+        original_published_count - len(published_jobs)
+    )
+    removed_review_duplicates = (
+        original_review_count - len(review_jobs)
+    )
+
     print("\n================================")
     print("WRITING DATABASE BATCHES")
     print("================================")
+    print(
+        f"Duplicate published records removed: "
+        f"{removed_published_duplicates}"
+    )
+    print(
+        f"Duplicate review/rejected records removed: "
+        f"{removed_review_duplicates}"
+    )
 
     # -----------------------------------------------------
     # PUBLISHED JOBS
