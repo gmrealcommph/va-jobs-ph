@@ -82,5 +82,17 @@
 {
   "slug": "remoteva",
   "name": "Remote VA"
+},
+  {
+  "slug": "winning-assistants",
+  "name": "Winning Assistants"
+},
+{
+  "slug": "huzzle",
+  "name": "Huzzle"
+},
+{
+  "slug": "thevstaff",
+  "name": "TheVStaff"
 }
 ]
