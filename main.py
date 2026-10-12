@@ -2270,11 +2270,11 @@ def save_review_job(supabase, job, decision, reason):
         .execute()
     )
 
-    # If this job was previously published, remove the stale
-    # published copy so it cannot remain visible on the site.
+    # Retain the listing and its reports/evidence. Preserve the existing
+    # classification outcome without deleting referenced job records.
     (
         supabase.table("jobs")
-        .delete()
+        .update({"status": "inactive", "classification_reason": reason})
         .eq("source", job.get("source"))
         .eq("source_job_id", job.get("source_job_id"))
         .execute()
@@ -2389,7 +2389,7 @@ def flush_job_batches(
         size,
     ):
         """
-        Delete stale records from the opposite table.
+        Retire published records; remove stale review classifications.
 
         Records are grouped by source first so that a job ID
         from one ATS can never accidentally match the same ID
@@ -2416,9 +2416,14 @@ def flush_job_batches(
             job_ids = list(dict.fromkeys(job_ids))
 
             for id_batch in chunks(job_ids, size):
+                target = supabase.table(table_name)
+                operation = (
+                    target.update({"status": "inactive"})
+                    if table_name == "jobs"
+                    else target.delete()
+                )
                 (
-                    supabase.table(table_name)
-                    .delete()
+                    operation
                     .eq("source", source)
                     .in_("source_job_id", id_batch)
                     .execute()
