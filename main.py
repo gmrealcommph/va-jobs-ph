@@ -2,6 +2,9 @@ import json
 import os
 import re
 import html
+from copy import deepcopy
+
+from db_retry import execute_with_retry
 
 from supabase import create_client
 from collectors.greenhouse import (
@@ -2355,28 +2358,38 @@ def flush_job_batches(
     # PUBLISHED JOBS
     # -----------------------------------------------------
 
-    for batch in chunks(published_jobs, batch_size):
-        (
-            supabase.table("jobs")
-            .upsert(
-                batch,
-                on_conflict="source,source_job_id",
-            )
-            .execute()
+    for batch_number, batch in enumerate(chunks(published_jobs, batch_size), 1):
+        payload = deepcopy(batch)
+        execute_with_retry(
+            lambda: (
+                supabase.table("jobs")
+                .upsert(
+                    deepcopy(payload),
+                    on_conflict="source,source_job_id",
+                    returning="minimal",
+                )
+            ),
+            table="jobs", operation="upsert",
+            batch_number=batch_number, row_count=len(payload),
         )
 
     # -----------------------------------------------------
     # REVIEW / REJECTED JOBS
     # -----------------------------------------------------
 
-    for batch in chunks(review_jobs, batch_size):
-        (
-            supabase.table("job_reviews")
-            .upsert(
-                batch,
-                on_conflict="source,source_job_id",
-            )
-            .execute()
+    for batch_number, batch in enumerate(chunks(review_jobs, batch_size), 1):
+        payload = deepcopy(batch)
+        execute_with_retry(
+            lambda: (
+                supabase.table("job_reviews")
+                .upsert(
+                    deepcopy(payload),
+                    on_conflict="source,source_job_id",
+                    returning="minimal",
+                )
+            ),
+            table="job_reviews", operation="upsert",
+            batch_number=batch_number, row_count=len(payload),
         )
 
     # -----------------------------------------------------
@@ -2410,24 +2423,34 @@ def flush_job_batches(
                 [],
             ).append(source_job_id)
 
+        batch_number = 0
         for source, job_ids in records_by_source.items():
 
             # Remove duplicate IDs before sending requests.
             job_ids = list(dict.fromkeys(job_ids))
 
             for id_batch in chunks(job_ids, size):
-                target = supabase.table(table_name)
-                operation = (
-                    target.update({"status": "inactive"})
-                    if table_name == "jobs"
-                    else target.delete()
+                batch_number += 1
+
+                def cleanup_request():
+                    target = supabase.table(table_name)
+                    operation = (
+                        target.update({"status": "inactive"})
+                        if table_name == "jobs"
+                        else target.delete()
+                    )
+                    return (
+                        operation
+                        .eq("source", source)
+                        .in_("source_job_id", list(id_batch))
+                    )
+
+                execute_with_retry(
+                    cleanup_request,
+                    table=table_name,
+                    operation="retire" if table_name == "jobs" else "delete",
+                    batch_number=batch_number, row_count=len(id_batch),
                 )
-                (
-                    operation
-                    .eq("source", source)
-                    .in_("source_job_id", id_batch)
-                    .execute()
-            )
 
 
     # Published jobs must not remain in job_reviews.

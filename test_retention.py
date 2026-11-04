@@ -2,10 +2,12 @@
 import ast
 import pathlib
 import unittest
+from copy import deepcopy
+from db_retry import execute_with_retry
 
 tree = ast.parse(pathlib.Path(__file__).with_name('main.py').read_text(encoding='utf-8'))
 functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('save_review_job', 'flush_job_batches')]
-namespace = {}
+namespace = {'deepcopy': deepcopy, 'execute_with_retry': execute_with_retry}
 exec(compile(ast.Module(body=functions, type_ignores=[]), 'main.py', 'exec'), namespace)
 
 
